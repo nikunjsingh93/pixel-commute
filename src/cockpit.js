@@ -37,8 +37,9 @@ export class Cockpit {
 
     // dashboard: faces the driver, top runs to the windscreen base
     b.tbox(0.86, 0.84, 0.55, 0.84, 0.55, 1.3, 0.62, 1.3, DASH, { top: DASH_TOP, rear: '#1d1e23' });
-    // binnacle cowl over the cluster
-    b.tbox(0.2, 0.2, 0.84, 0.93, 0.6, 0.66, 0.6, 0.66, '#1b1c21', { x: 0.38 });
+    // binnacle: the cluster sits in the gap above the wheel hub, seen through the rim
+    b.tbox(0.2, 0.19, 0.84, 1.07, 0.6, 0.72, 0.6, 0.72, '#1b1c21', { x: 0.38 });
+    b.box(0.2, 0.56, 1.06, 1.08, 0.52, 0.72, '#16171b'); // visor over the display
     // centre console + stack
     b.box(-0.18, 0.18, 0.35, 0.83, 0.45, 0.9, '#202127');
     b.box(-0.14, 0.14, 0.42, 0.7, -0.6, 0.45, '#26272d');
@@ -77,10 +78,10 @@ export class Cockpit {
     this.tex.generateMipmaps = false;
     this.tex.colorSpace = THREE.SRGBColorSpace;
     const scr = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.4, 0.133),
+      new THREE.PlaneGeometry(0.3, 0.1),
       new THREE.MeshBasicMaterial({ map: this.tex, color: new THREE.Color(1.5, 1.5, 1.5) }),
     );
-    scr.position.set(0.38, 0.885, 0.596);
+    scr.position.set(0.38, 0.995, 0.592);
     scr.rotation.set(0.15, Math.PI, 0);
     this.group.add(scr);
 

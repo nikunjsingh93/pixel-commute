@@ -2,7 +2,7 @@
 //   bottom-left : steer left / right
 //   bottom-right: gas (big), brake, handbrake above gas
 //   top-right   : one hamburger button -> pauses and opens the menu
-//                 (camera, autopilot, time, weather, radio, fullscreen)
+//                 (camera, autopilot, time, weather, radio, resolution, fullscreen)
 // Buttons press the same key codes as the keyboard, so the game reads one input.
 const CSS = `
 #tctl, #tmenu { position: fixed; z-index: 12; pointer-events: none; display: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
@@ -22,7 +22,7 @@ body.touch canvas { touch-action: none; }
 #tmenu { right: max(18px, env(safe-area-inset-right)); top: 50%; transform: translateY(-50%);
   grid-template-columns: repeat(2, minmax(118px, 26vmin)); gap: 10px; }
 #tmenu.open { display: grid; pointer-events: auto; }
-#tmenu .tb { position: static; height: clamp(40px, 11vmin, 54px); border-radius: 10px; font-size: 11px; padding: 0 8px; text-align: center; }
+#tmenu .tb { position: static; height: clamp(36px, 10vmin, 52px); border-radius: 10px; font-size: 11px; padding: 0 8px; text-align: center; }
 #tmenu .tb small { font-size: 9px; color: #ffcd6e; letter-spacing: 1px; }
 #tmenu .tb.act { background: rgba(91,146,113,.6); border-color: #9fd8b0; }
 #tmenu .tb.resume { grid-column: 1 / -1; background: rgba(255,205,110,.25); border-color: #ffcd6e; }
@@ -104,6 +104,7 @@ export function setupTouch(game) {
     { label: (s) => `Weather<small>${s.weather}</small>`, code: 'KeyR' },
     { label: (s) => `Radio<small>${s.radio ? 'on' : 'off'}</small>`, code: 'KeyM', act: (s) => s.radio },
     { label: (s) => `Station<small>${s.station}</small>`, code: 'KeyN' },
+    { label: (s) => `Resolution<small>${s.res}</small>`, code: 'Resolution' },
     { label: () => `Fullscreen<small>toggle</small>`, fn: () => game.fullscreen() },
   ];
   const items = entries.map((e) => {

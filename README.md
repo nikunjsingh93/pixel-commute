@@ -39,8 +39,9 @@ Gamepad: left stick steers (analog), RT/LT for gas and brake, A for the handbrak
 
 **Touch screens** get on-screen controls laid out like Open Road's: steering arrows bottom-left;
 Gas, Brake and Handbrake bottom-right; and one ☰ menu button top-right. The menu pauses the game
-and holds everything else: Camera, Autopilot, Time, Weather, Radio, Station and Fullscreen, each
-showing its current setting. Tap Resume, or anywhere outside the menu, to keep driving.
+and holds everything else: Camera, Autopilot, Time, Weather, Radio, Station, Resolution and
+Fullscreen, each showing its current setting. Resolution steps through the clean pixel scales your
+screen allows; the choice is remembered (so are `[` `]` on desktop). Tap Resume, or anywhere outside the menu, to keep driving.
 
 ## Install / offline (PWA)
 

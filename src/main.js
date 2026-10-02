@@ -14,6 +14,14 @@ import { Hud } from './hud.js';
 import { Audio } from './audio.js';
 
 const params = new URLSearchParams(location.search);
+
+// small persisted preferences (storage may be unavailable: private mode etc.)
+function loadPref(k) {
+  try { return localStorage.getItem('pixel-commute.' + k); } catch (e) { return null; }
+}
+function savePref(k, v) {
+  try { localStorage.setItem('pixel-commute.' + k, String(v)); } catch (e) { /* ignore */ }
+}
 const DEV = params.has('dev');
 const HOLD = params.has('hold');
 
@@ -74,7 +82,7 @@ const st = {
   cam: Number(params.get('cam') ?? 1),
   paused: false,
   time: 0,
-  pixelH: Number(params.get('px') || 575),
+  pixelH: Number(params.get('px') || loadPref('pixelH') || 575),
   touch: false,
   shake: 0,
 };
@@ -129,6 +137,21 @@ function nearestLane() {
   return best;
 }
 
+// touch menu: step through the clean (integer) pixel scales this screen allows
+function cycleResolution() {
+  const devH = Math.round((window.innerHeight || 720) * (window.devicePixelRatio || 1));
+  const opts = [];
+  for (let s = 1; s <= 10; s++) {
+    const h = Math.ceil(devH / s);
+    if (h >= 160 && h <= 900 && !opts.includes(h)) opts.push(h);
+  }
+  opts.sort((a, b) => a - b);
+  st.pixelH = opts.find((h) => h > st.h) ?? opts[0];
+  savePref('pixelH', st.pixelH);
+  resize();
+  hud.say(`RESOLUTION ${st.w}X${st.h}`);
+}
+
 // one-shot actions, shared by the keyboard and the touch buttons
 function action(k) {
   if (st.mode === 'title') {
@@ -179,8 +202,12 @@ function action(k) {
     case 'BracketLeft':
     case 'BracketRight':
       st.pixelH = Math.max(120, Math.min(900, st.pixelH * (k === 'BracketLeft' ? 0.8 : 1.25)));
+      savePref('pixelH', Math.round(st.pixelH));
       resize();
       hud.say(`RESOLUTION ${st.w}X${st.h}`);
+      break;
+    case 'Resolution':
+      cycleResolution();
       break;
     case 'KeyH':
       hud.help = !hud.help;
@@ -229,6 +256,7 @@ function enableTouch() {
     state: () => ({
       cam: CAMS[st.cam], auto: player.auto, period: look.name, weather: W.name,
       radio: !!(audio.ctx && audio.music), station: ['88.1', '91.4', 'AM 640', '101.9'][audio.station % 4],
+      res: `${st.h}p`,
     }),
     fullscreen: () => {
       const el = document.documentElement;
