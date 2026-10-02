@@ -27,7 +27,7 @@ npm run deploy     # build + publish to the gh-pages branch (GitHub Pages)
 | `Shift` | handbrake |
 | `Space` | autopilot: keeps a lane, follows traffic, overtakes slow cars |
 | `C` | camera: chase, far (default), cockpit, bumper, cinema |
-| `T` | jump the clock forward 1.5 h (blue hour, evening, night, dawn, day, sunset) |
+| `T` | next time of day: dawn, day, afternoon, sunset, blue hour, evening, night |
 | `R` | weather: snow, rain, clear, fog |
 | `M` / `N` | radio on/off, next station (generative lo-fi) |
 | `[` `]` | pixel size (render resolution) |

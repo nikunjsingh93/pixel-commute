@@ -22,7 +22,11 @@ body.touch canvas { touch-action: none; }
 #tmenu { right: max(18px, env(safe-area-inset-right)); top: 50%; transform: translateY(-50%);
   grid-template-columns: repeat(2, minmax(118px, 26vmin)); gap: 10px; }
 #tmenu.open { display: grid; pointer-events: auto; }
-#tmenu .tb { position: static; height: clamp(36px, 10vmin, 52px); border-radius: 10px; font-size: 11px; padding: 0 8px; text-align: center; }
+#tmenu .tb.busy small { visibility: hidden; }
+#tmenu .tb.busy::after { content: ''; position: absolute; bottom: 6px; left: 50%; width: 10px; height: 10px; margin-left: -7px;
+  border: 2px solid #ffcd6e; border-right-color: transparent; border-radius: 50%; animation: tspin .6s linear infinite; }
+@keyframes tspin { to { transform: rotate(360deg); } }
+#tmenu .tb { position: relative; height: clamp(36px, 10vmin, 52px); border-radius: 10px; font-size: 11px; padding: 0 8px; text-align: center; }
 #tmenu .tb small { font-size: 9px; color: #ffcd6e; letter-spacing: 1px; }
 #tmenu .tb.act { background: rgba(91,146,113,.6); border-color: #9fd8b0; }
 #tmenu .tb.resume { grid-column: 1 / -1; background: rgba(255,205,110,.25); border-color: #ffcd6e; }
@@ -107,8 +111,20 @@ export function setupTouch(game) {
     { label: (s) => `Resolution<small>${s.res}</small>`, code: 'Resolution' },
     { label: () => `Fullscreen<small>toggle</small>`, fn: () => game.fullscreen() },
   ];
+  // a press shows a spinner until the change has actually been drawn
+  const busy = (b) => {
+    b.classList.add('busy');
+    const t0 = performance.now();
+    const done = () => (performance.now() - t0 > 250 ? b.classList.remove('busy') : requestAnimationFrame(done));
+    requestAnimationFrame(() => requestAnimationFrame(done));
+  };
   const items = entries.map((e) => {
-    const b = mk(menu, e.cls || '', '', {}, () => (e.fn ? e.fn() : game.press(e.code)));
+    const b = mk(menu, e.cls || '', '', {}, () => {
+      if (e.code && e.code !== 'Escape') busy(b);
+      if (e.fn) e.fn();
+      else game.press(e.code);
+      refresh();
+    });
     return { e, b, html: '' };
   });
   const refresh = () => {

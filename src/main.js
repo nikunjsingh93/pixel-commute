@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Path } from './path.js';
 import { World, ROAD_L, ROAD_R, LANE_D } from './world.js';
-import { Sky } from './sky.js';
+import { Sky, lookAt } from './sky.js';
 import { PixelPipeline } from './pixel.js';
 import { Glows, LightPool } from './fx.js';
 import { Traffic } from './traffic.js';
@@ -73,6 +73,8 @@ const WEATHERS = [
   { name: 'FOG', kind: 'none', amount: 0, wet: 0.45, snow: 0, overcast: 0.7, fog: 3.2 },
 ];
 const CAMS = ['CHASE', 'FAR', 'COCKPIT', 'BUMPER', 'CINEMA'];
+// time-of-day presets the T key / Time button steps through
+const TIME_STOPS = [6.3, 10, 16.5, 18.4, 19.2, 20.5, 23];
 
 const st = {
   mode: params.get('play') ? 'drive' : 'title',
@@ -176,11 +178,22 @@ function action(k) {
       camState.init = false;
       hud.say(`CAMERA: ${CAMS[st.cam]}`);
       break;
-    case 'KeyT':
-      st.hour = (Math.floor(st.hour * 2) / 2 + 1.5) % 24;
+    case 'KeyT': {
+      // jump to the next distinct look (a plain +1.5 h could land on "night" 5 times in a row)
+      const cur = lookAt(st.hour).name;
+      const i0 = TIME_STOPS.findIndex((h) => h > st.hour + 0.05);
+      for (let i = 0; i < TIME_STOPS.length; i++) {
+        const h = TIME_STOPS[((i0 < 0 ? 0 : i0) + i) % TIME_STOPS.length];
+        if (lookAt(h).name !== cur || i === TIME_STOPS.length - 1) {
+          st.hour = h;
+          break;
+        }
+      }
       envKey = '';
-      hud.say(sky.apply(st.hour, scene, st.time).name);
+      look = sky.apply(st.hour, scene, st.time);
+      hud.say(look.name);
       break;
+    }
     case 'KeyR':
       st.weather = (st.weather + 1) % WEATHERS.length;
       applyWeather();
@@ -319,7 +332,8 @@ function updateEnv() {
   if (key === envKey) return;
   envKey = key;
   envRT?.dispose();
-  envRT = pmrem.fromScene(envScene, 0, 0.1, 200);
+  // small cube: plenty for pixel-art reflections and cheap to rebuild on phones
+  envRT = pmrem.fromScene(envScene, 0, 0.1, 200, { size: 64 });
   scene.environment = envRT.texture;
 }
 
@@ -588,6 +602,15 @@ function render(dt) {
 // prime the world
 world.update(player.s, true);
 traffic.init(player.s);
+// compile every shader up front (rain, snow, night lights...) so the first
+// weather / time change does not stall a phone while it compiles
+weather.snow.visible = weather.rain.visible = true;
+// (compiled against the low-res scene target: programs differ from the canvas ones)
+try {
+  renderer.setRenderTarget(pipe.sceneRT);
+  renderer.compile(scene, camera);
+  renderer.setRenderTarget(null);
+} catch (e) { /* optional */ }
 
 let last = performance.now();
 function loop(now) {
