@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Pixel Commute</title>
+  <meta name="description" content="An endless, relaxing highway drive through a pixel-art city at blue hour." />
+  <meta name="theme-color" content="#131827" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="./icons/favicon-64.png" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Pixel Commute" />
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b0e1a; overflow: hidden; }
+    #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+    #gl, #hud { position: absolute; image-rendering: pixelated; image-rendering: crisp-edges; }
+    #hud { pointer-events: none; }
+    body { cursor: default; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="gl"></canvas>
+    <canvas id="hud"></canvas>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
