@@ -148,7 +148,8 @@ export class World {
     this.mGrass = new THREE.MeshLambertMaterial({ map: T.groundTexture('#3b4a36') });
     this.mPave = new THREE.MeshLambertMaterial({ map: T.concreteTexture('#7c7a78') });
     this.mRail = new THREE.MeshLambertMaterial({ color: '#a7aebb' });
-    this.mLeaf = new THREE.MeshLambertMaterial({ color: '#2f5a42', flatShading: true });
+    // conifers: vertex-coloured (each tier and its underside shaded), tinted by snow
+    this.mLeaf = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
     this.mTile = new THREE.MeshLambertMaterial({ map: T.tileTexture() });
     this.mColored = new THREE.MeshLambertMaterial({ vertexColors: true });
     this.mWater = new THREE.MeshStandardMaterial({
@@ -232,7 +233,7 @@ export class World {
     this.mGrass.color.setRGB(1 + snow * 3.2, 1 + snow * 2.9, 1 + snow * 3.4);
     const kp = 1 + snow * 0.9;
     this.mPave.color.setRGB(kp, kp * 1.02, kp * 1.08);
-    this.mLeaf.color.set('#2f5a42').lerp(new THREE.Color('#b9c6d6'), snow * 0.35);
+    this.mLeaf.color.setRGB(1 + snow * 1.3, 1 + snow * 1.15, 1 + snow * 1.55);
     this.mRoof.color.set('#3a2e2c').lerp(new THREE.Color('#dfe6ef'), snow * 0.8);
   }
 
@@ -331,7 +332,9 @@ export class World {
 
   // ---------------------------------------------------------------- chunks
   update(camS, all = false) {
-    const i0 = Math.floor((camS - 90) / CHUNK);
+    // keep a good stretch behind too: looking back (mouse look, photo mode)
+    // should not show the road ending
+    const i0 = Math.floor((camS - 280) / CHUNK);
     const i1 = Math.floor((camS + 680) / CHUNK);
     for (const [i, ch] of this.chunks) {
       if (i < i0 || i > i1) {
@@ -347,7 +350,7 @@ export class World {
         net.build(this.root, {
           ground: this.mGround, pave: this.mPave, street: this.mStreet, ramp: this.mRamp, concrete: this.mConcrete,
           rail: this.mRail, dark: this.mDark, metal: this.mMetal, lamp: this.mLamp, building: this.mBuilding, shop: this.mShop,
-          colored: this.mColored, leaf: this.mLeaf, canopy: this.mCanopy,
+          colored: this.mColored, leaf: this.mLeaf, canopy: this.mCanopy, tk: this.tk,
         }, GeoB);
         this.nets.set(f.id, net);
         if (!all) return; // one heavy build per frame
@@ -443,17 +446,53 @@ export class World {
     }
   }
 
-  // low-poly pine: three stacked cones on a short trunk
+  // a conifer: a thin trunk and five or six drooping tiers whose outline is
+  // a ragged star (needle clumps), dark underneath and lighter toward the top
   tree(geo, s, d, base, a, r) {
     const k = 0.85 + r * 0.45;
     const p = this.path.point(s, d, base);
     const c = [p.x - a.x, p.y - a.y, p.z - a.z];
-    const rot = r * 6;
-    this.obox(geo.dark, s, d, base, 0.24, 0.24, 1.6 * k, a);
-    const slim = 0.8 + ((r * 7.3) % 1) * 0.35;
-    this.cone(geo.leaf, [c[0], c[1] + 1.0 * k, c[2]], 1.6 * k * slim, 2.6 * k, 7, rot);
-    this.cone(geo.leaf, [c[0], c[1] + 2.3 * k, c[2]], 1.2 * k * slim, 2.3 * k, 7, rot + 0.4);
-    this.cone(geo.leaf, [c[0], c[1] + 3.5 * k, c[2]], 0.75 * k * slim, 1.8 * k, 7, rot + 0.8);
+    const r2 = (r * 7.31) % 1, r3 = (r * 13.7) % 1;
+    const slim = 0.8 + r2 * 0.35;
+    const tiers = 5 + (r3 < 0.5 ? 1 : 0);
+    const H = (6.2 + r * 2.2) * k;
+    // greens per tree: a little bluer or more olive
+    // (linear colour values: deep spruce greens)
+    const hue = r3 < 0.33 ? [0.03, 0.095, 0.05] : r3 < 0.66 ? [0.042, 0.1, 0.038] : [0.028, 0.082, 0.064];
+    this.obox(geo.dark, s, d, base, 0.18 * k, 0.18 * k, 1.6 * k, a);
+    for (let t = 0; t < tiers; t++) {
+      const u = t / (tiers - 1);
+      const y0 = (1.0 + u * (H / k - 3.1)) * k;
+      const rad = (1.85 - 1.45 * u) * k * slim;
+      const h = (2.1 - 0.7 * u) * k;
+      const lift = 0.8 + 0.6 * u; // lighter toward the top
+      const top = [hue[0] * lift, hue[1] * lift, hue[2] * lift];
+      this.needleTier(geo.leaf, [c[0], c[1] + y0, c[2]], rad, h, 9, r * 6 + t * 0.9, top, 0.32 * k);
+    }
+  }
+
+  // one tier: star-shaped skirt (2n points, alternating long / short) that
+  // droops at the tips, rising to an apex; a dark underside closes it
+  needleTier(geo, p, rad, h, n, rot, col, droop) {
+    const ring = [];
+    for (let i = 0; i < n * 2; i++) {
+      const t = rot + (i / (n * 2)) * Math.PI * 2;
+      const long = i % 2 === 0;
+      const rr = rad * (long ? 1 : 0.68);
+      ring.push([p[0] + Math.cos(t) * rr, p[1] - (long ? droop : 0), p[2] + Math.sin(t) * rr]);
+    }
+    const apex = [p[0], p[1] + h, p[2]];
+    const under = [p[0], p[1] + h * 0.18, p[2]];
+    const C = (k) => new THREE.Color(col[0] * k, col[1] * k, col[2] * k);
+    for (let i = 0; i < n * 2; i++) {
+      const A = ring[i], B = ring[(i + 1) % (n * 2)];
+      geo._col = C(i % 2 ? 1.0 : 0.86);
+      const ia = geo.v(...A), ib = geo.v(...B), ic = geo.v(...apex);
+      geo.tri(ia, ic, ib);
+      geo._col = C(0.42);
+      const ja = geo.v(...A), jb = geo.v(...B), jc = geo.v(...under);
+      geo.tri(ja, jb, jc);
+    }
   }
 
   // ---------------------------------------------------------------- the chunk
@@ -472,6 +511,7 @@ export class World {
     };
     geo.leafTk.col = '#4f8a3e';
     geo.colored.col = '#888888';
+    geo.leaf.col = '#2f5a42';
     const c = {
       geo, a: anchor, s0, s1, glows: [], lights: [], signs: [], boards: [], obstacles: [], cones: [],
       meshes: [], lines: [], wires: [], arms: [],
@@ -1050,6 +1090,7 @@ export class World {
   }
   *allObstacles() {
     for (const ch of this.chunks.values()) yield* ch.obstacles;
+    for (const n of this.nets.values()) yield* n.obstacles;
   }
   *allChunks() {
     yield* this.chunks.values();

@@ -44,7 +44,7 @@ export const CARS = [
       mass: 2350, inertia: new V3(3800, 4300, 1150), wheelbase: 3.3, track: 1.72, comH: 0.85, radius: 0.37, wheelInertia: 2.2,
       kF: 52000, kR: 62000, cBump: 4200, cReb: 6200, arbF: 20000, arbR: 12000,
       gears: [4.2, 2.6, 1.7, 1.25, 1.0, 0.8], finalDrive: 3.4, maxTorque: 430, idle: 700, redline: 4800,
-      brakeTorque: 4400, brakeBias: 0.6, cdA: 0.95, gripK: 0.95, steerRate: 7, steerK: 0.72, assistK: 0.55,
+      brakeTorque: 4400, brakeBias: 0.6, cdA: 0.95, gripK: 1.06, steerRate: 7.5, steerK: 0.8, assistK: 0.85,
     },
   },
 ];

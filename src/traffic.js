@@ -222,6 +222,7 @@ export class Traffic {
         c.mesh.position.set(x, y, z);
         const heading = p.h + (c.dir > 0 ? 0 : Math.PI) + c.yaw * c.dir;
         c.mesh.rotation.set(-Math.atan(p.grade) * c.dir, heading, 0, 'YXZ');
+        if (this.wheels) this.wheels.add(c.mesh, c.dims, (c.s * c.dir) / c.dims.wr);
         // lights
         const fx = Math.sin(heading), fz = Math.cos(heading);
         const lx = Math.cos(heading), lz = -Math.sin(heading); // local +X (left)

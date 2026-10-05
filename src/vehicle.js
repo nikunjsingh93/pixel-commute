@@ -91,13 +91,13 @@ export class Vehicle {
     };
   }
 
-  // speed-sensitive lock: full lock asks for ~1.6 g (kinematic: a = v^2 *
+  // speed-sensitive lock: full lock asks for ~2 g (kinematic: a = v^2 *
   // tan(delta) / wheelbase), more than the tyres give, so full lock always
   // turns as hard as grip allows while small inputs stay smooth at speed
   maxSteer(v) {
     const S = this.spec;
     const vv = Math.max(v, 1) ** 2;
-    return Math.max(0.02, Math.min(0.62, (16 * S.wheelbase * (S.steerK || 1)) / vv));
+    return Math.max(0.025, Math.min(0.7, (21 * S.wheelbase * (S.steerK || 1)) / vv));
   }
 
   // place upright at (x, y = ground, z) heading along (dx, dz)
@@ -245,8 +245,9 @@ export class Vehicle {
       wl.copy(gn).cross(wf).normalize().negate();
       vc.copy(this.omega).cross(r).add(this.vel);
       const vx = vc.dot(wf), vy = vc.dot(wl);
-      const mu0 = (wh.surf === 0 ? 1.38 : 1.15) * (1 - 0.42 * this.snow) * (1 - 0.18 * this.wet);
-      const mu = mu0 * (1 - 0.07 * (f / (S.mass * 2.45) - 1)) * (wh.rear ? 1.06 : 1.0) * (S.gripK || 1);
+      // grippy road tyres; snow and rain take a little off (arcade-friendly)
+      const mu0 = (wh.surf === 0 ? 1.62 : 1.3) * (1 - 0.2 * this.snow) * (1 - 0.08 * this.wet);
+      const mu = mu0 * (1 - 0.07 * (f / (S.mass * 2.45) - 1)) * (wh.rear ? 1.12 : 1.0) * (S.gripK || 1);
       const Fz = f;
       const vref = Math.max(Math.abs(vx), 1.6);
       const R = S.radius, I = S.wheelInertia;
@@ -309,7 +310,7 @@ export class Vehicle {
       // yaw stability assist toward the kinematic (bicycle model) yaw rate
       const yaw = this.omega.dot(up);
       // (a right turn is a negative yaw rate about +Y with forward = -Z, hence the minus)
-      const want = -((this.fwdSpeed * Math.tan(this.steerAngle)) / S.wheelbase) * 0.92;
+      const want = -((this.fwdSpeed * Math.tan(this.steerAngle)) / S.wheelbase) * 0.97;
       const err = yaw - want;
       const ak = S.assistK || 1; // per car: how hard the assist helps it rotate
       const tq = clamp(-err * 5200 * this.assist * ak, -4200 * ak, 4200 * ak);

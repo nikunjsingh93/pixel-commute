@@ -451,6 +451,9 @@ export class Player {
       const wh = V.wheels[i];
       const w = this.wheels[i];
       w.pivot.position.copy(wh.hub).sub(V.pos).applyQuaternion(qi);
+      // drawn just proud of the body sides (the physics track is a little narrower)
+      const px = w.pivot.position.x;
+      w.pivot.position.x = Math.sign(px) * Math.max(Math.abs(px), this.dims.hw - 0.08);
       w.pivot.rotation.set(0, -wh.steerA, 0);
       w.spinner.rotation.x = -wh.spin;
     }

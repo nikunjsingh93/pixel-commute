@@ -14,28 +14,29 @@ const CSS = `
 .pb.pill { border-radius: 10px; }
 .pb.small { font-size: 10px; letter-spacing: 1px; }
 .pb.act { background: rgba(91,146,113,.6); border-color: #9fd8b0; }
-.pb small { font-size: 9px; color: #ffcd6e; letter-spacing: 1px; }
+.pb small { font-size: 10px; color: #ffcd6e; letter-spacing: 1px; }
 .pb.busy small { visibility: hidden; }
 .pb.busy::after { content: ''; position: absolute; bottom: 6px; left: 50%; width: 10px; height: 10px; margin-left: -7px;
   border: 2px solid #ffcd6e; border-right-color: transparent; border-radius: 50%; animation: uispin .6s linear infinite; }
 @keyframes uispin { to { transform: rotate(360deg); } }
 
 .ui-menu { position: fixed; z-index: 13; display: none; gap: 10px; pointer-events: auto;
-  grid-template-columns: repeat(var(--cols, 2), minmax(118px, 24vmin)); }
+  grid-template-columns: repeat(var(--cols, 2), minmax(132px, 26vmin)); }
 .ui-menu.open { display: grid; }
-.ui-menu .pb { position: relative; height: clamp(34px, 9vmin, 50px); border-radius: 10px; font-size: 11px; padding: 0 8px; text-align: center; }
+.ui-menu .pb { position: relative; height: clamp(38px, 10vmin, 56px); border-radius: 10px; font-size: 14px; padding: 0 8px; text-align: center; }
+.ui-menu .pb small { font-size: 11px; }
 .ui-menu .pb.wide { grid-column: 1 / -1; }
 .ui-menu .pb.primary { background: rgba(255,205,110,.25); border-color: #ffcd6e; }
 
 .ui-panel { position: fixed; z-index: 14; left: 50%; top: 50%; transform: translate(-50%, -50%); display: none; pointer-events: auto;
   max-width: min(94vw, 760px); max-height: 92vh; overflow: auto; box-sizing: border-box; padding: 14px 16px;
-  color: #f4f1e8; font: 700 12px/1.4 'Courier New', ui-monospace, monospace; letter-spacing: 1px; text-transform: uppercase;
+  color: #f4f1e8; font: 700 14px/1.45 'Courier New', ui-monospace, monospace; letter-spacing: 1px; text-transform: uppercase;
   background: rgba(10,13,24,.88); border: 2px solid rgba(255,205,110,.6); border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
 .ui-panel.open { display: block; }
 .ui-panel h2 { margin: 0 0 10px; font-size: 16px; letter-spacing: 3px; color: #ffcd6e; }
 .ui-panel .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
-.ui-panel .pb { position: relative; height: 36px; min-width: 44px; padding: 0 12px; border-radius: 8px; font-size: 11px; }
-.ui-panel .muted { color: #90a8c9; font-size: 11px; }
+.ui-panel .pb { position: relative; height: 40px; min-width: 44px; padding: 0 12px; border-radius: 8px; font-size: 13px; }
+.ui-panel .muted { color: #90a8c9; font-size: 12px; }
 .ui-panel .bar { display: inline-block; width: 120px; height: 8px; background: rgba(144,168,201,.25); vertical-align: middle; }
 .ui-panel .bar i { display: block; height: 100%; background: #ffcd6e; }
 .ui-panel input[type=text] { font: 700 16px 'Courier New', monospace; letter-spacing: 3px; text-transform: uppercase; width: 9.5em;

@@ -234,7 +234,7 @@ export function buildWorks(W, f, c) {
   if (run1 - run0 > 1) c.obstacles.push({ s: (run0 + run1) / 2, d: 11.5, L: run1 - run0, W: 0.5, kind: 'barrier' });
   const st = f.s0 + 150;
   if (st >= x0 && st < x1) {
-    const car = makeCar('truck', '#e8762a');
+    const car = makeCar('truck', '#e8762a', true);
     const p = W.path.sample(st, {});
     car.group.position.set(p.x + p.rx * 13.2 - a.x, p.y - a.y, p.z + p.rz * 13.2 - a.z);
     car.group.rotation.y = p.h;

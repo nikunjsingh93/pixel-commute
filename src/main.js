@@ -7,6 +7,7 @@ import { PixelPipeline } from './pixel.js';
 import { Glows, LightPool } from './fx.js';
 import { Traffic } from './traffic.js';
 import { Player, VMAX } from './player.js';
+import { WheelPool } from './cars.js';
 import { Weather } from './weather.js';
 import { setupTouch, isTouchDevice } from './touch.js';
 import { PhotoMode } from './photo.js';
@@ -55,6 +56,10 @@ const glows = new Glows(scene);
 const lamps = new LightPool(scene, 10);
 const carLights = new LightPool(scene, 4);
 const traffic = new Traffic(world.root, path);
+// every traffic / loop car's wheels: one instanced mesh, spun each frame
+const wheelPool = new WheelPool(world.root);
+traffic.wheels = wheelPool;
+world.wheels = wheelPool;
 let carSel = { car: 'saloon', paint: '#15161b', plate: '8-BIT' };
 try { carSel = { ...carSel, ...JSON.parse(loadPref('car') || '{}') }; } catch (e) { /* keep defaults */ }
 const player = new Player(world.root, path, carSel);
@@ -132,7 +137,13 @@ function resize() {
   pipe.setSize(w, h);
   const hs = Math.max(1, Math.round(h / 200));
   hud.resize(Math.ceil(w / hs), Math.ceil(h / hs));
-  for (const c of [glCanvas, hudCanvas, hud2Canvas]) {
+  // menu text: font pixels of k device pixels (about 4 css px on a monitor)
+  const kf = Math.max(2, Math.round(devH / (st.touch ? 170 : 230)));
+  const fw = Math.ceil(devW / kf), fh = Math.ceil(devH / kf);
+  hud.resizeFine(fw, fh);
+  hud2Canvas.style.width = `${(fw * kf) / dpr}px`;
+  hud2Canvas.style.height = `${(fh * kf) / dpr}px`;
+  for (const c of [glCanvas, hudCanvas]) {
     c.style.width = `${(w * scale) / dpr}px`;
     c.style.height = `${(h * scale) / dpr}px`;
   }
@@ -869,8 +880,10 @@ function render(dt) {
   const focus = { x: carNow.x + fx * 30, y: carNow.y, z: carNow.z + fz * 30 };
   lamps.assign(lampCands, focus, 55);
 
+  wheelPool.begin();
   traffic.render(world.origin, glows, wet, Math.max(0.35, night), st.time, streak);
   for (const net of world.nets.values()) net.render(world.origin, glows, Math.max(0.35, night), st.time);
+  wheelPool.end();
   commute.glows(world.origin, (...a) => glows.add(...a), st.time);
   // the showroom keeps the cars around the player out of shot
   for (const tc of traffic.cars) tc.mesh.scale.setScalar(garage.isOpen && Math.abs(tc.s - player.s) < 25 ? 0 : 1);

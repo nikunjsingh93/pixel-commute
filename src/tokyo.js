@@ -399,6 +399,7 @@ export class Tokyo {
     const style = opts.style ?? Math.floor(this.r() * 8);
     const h = floors * 3.2;
     const d = front + side * depth / 2;
+    if (this.c.foot) this.c.foot(sm, d, along, depth);
     // walls (facade texture on all four sides)
     const v0 = 1 - (style * 256 + 256) / (FAC_STYLES * 256);
     const v1 = v0 + floors * 64 / (FAC_STYLES * 256);
@@ -587,6 +588,7 @@ export class Tokyo {
     const depth = 7 + this.r() * 3;
     const hf = front + side * setback;
     const d = hf + side * depth / 2;
+    if (this.c.foot) this.c.foot(sm, d, along - 1.2, depth);
     const floors = this.r() < 0.75 ? 2 : 1;
     const style = [0, 3, 5, 6, 1][Math.floor(this.r() * 5)];
     const h = floors * 3.0;
@@ -614,11 +616,12 @@ export class Tokyo {
   }
 
   // ---- a plain block behind the street (apartments / small offices)
-  backBlock(sm, along, near, side, base, floors, building) {
+  backBlock(sm, along, near, side, base, floors, building, depthIn) {
     const W = this.W, geo = this.c.geo, a = this.c.a;
     const f = W.path.sample(sm, {});
-    const depth = 10 + this.r() * 8;
+    const depth = depthIn || 10 + this.r() * 8;
     const d = near + side * depth / 2;
+    if (this.c.foot) this.c.foot(sm, d, along, depth);
     const h = floors * 3.2;
     if (building) {
       const uOff = Math.floor(this.r() * 16) / 16, vOff = Math.floor(this.r() * 16) / 16;

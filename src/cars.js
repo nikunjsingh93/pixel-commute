@@ -49,22 +49,34 @@ export class Builder {
     const w = (x1 - x0) / 2;
     this.tbox(w, w, y0, y1, z0, z1, z0, z1, col, { ...opt, x: (x0 + x1) / 2 });
   }
-  // wheel: octagonal prism along X
-  wheel(x, z, r, w, col = '#16171c') {
-    const c = new THREE.Color(col);
-    const hub = new THREE.Color('#5b5f68');
-    const n = 8;
-    const x0 = x - w / 2, x1 = x + w / 2;
-    for (let i = 0; i < n; i++) {
-      const a0 = (i / n) * Math.PI * 2 + Math.PI / n;
-      const a1 = ((i + 1) / n) * Math.PI * 2 + Math.PI / n;
-      const y0 = r + Math.sin(a0) * r, z0 = z + Math.cos(a0) * r;
-      const y1 = r + Math.sin(a1) * r, z1 = z + Math.cos(a1) * r;
-      this.quad([x0, y1, z1], [x1, y1, z1], [x1, y0, z0], [x0, y0, z0], c);
-      const outer = x > 0 ? x1 : x0;
-      const cc = [outer, r, z];
-      if (x > 0) this.tri(cc, [outer, y1, z1], [outer, y0, z0], i % 2 ? hub : c);
-      else this.tri(cc, [outer, y0, z0], [outer, y1, z1], i % 2 ? hub : c);
+  // wheel along X, centred on (x, y, z): a 20-sided tyre with a sidewall,
+  // a silver rim with five spokes (so you can see it turn) and a dark hub.
+  // Both sides are capped, so one geometry works on either side of a car.
+  wheel(x, y, z, r, w) {
+    const N = 20;
+    const tyre = new THREE.Color('#141518'), wall = new THREE.Color('#25262b');
+    const lip = new THREE.Color('#8d939c'), spoke = new THREE.Color('#c3c7cf'), gap = new THREE.Color('#2e3138');
+    const hub = new THREE.Color('#6f747d');
+    const P = (xx, rr, a) => [xx, y + Math.sin(a) * rr, z + Math.cos(a) * rr];
+    const hw = w / 2;
+    for (let i = 0; i < N; i++) {
+      const a0 = ((i - 0.5) / N) * Math.PI * 2, a1 = ((i + 0.5) / N) * Math.PI * 2;
+      // tread (faces out)
+      this.quad(P(x - hw, r, a0), P(x - hw, r, a1), P(x + hw, r, a1), P(x + hw, r, a0), tyre);
+      for (const s of [1, -1]) {
+        const xo = x + s * hw, xr = x + s * hw * 0.77; // the rim sits a little inside the tyre
+        const ring = (r0, r1, xa, xb, col) => {
+          // annulus from radius r0 (at xa) to r1 (at xb), facing +s
+          const A = P(xa, r0, a0), B = P(xa, r0, a1), C = P(xb, r1, a1), D = P(xb, r1, a0);
+          if (s > 0) this.quad(A, B, C, D, col);
+          else this.quad(A, D, C, B, col);
+        };
+        ring(r, r * 0.66, xo, xo, wall); // sidewall
+        ring(r * 0.66, r * 0.66, xo, xr, gap); // rim well (short inner cylinder)
+        ring(r * 0.66, r * 0.58, xr, xr, lip); // rim lip
+        ring(r * 0.58, r * 0.2, xr, xr, i % 4 === 0 ? spoke : gap); // spokes
+        ring(r * 0.2, 0.0001, xr, xr, hub); // hub
+      }
     }
   }
   geometry() {
@@ -75,6 +87,57 @@ export class Builder {
     return g;
   }
 }
+
+// Draws every traffic car's wheels in one instanced mesh. Each frame:
+// begin(), add(carMesh, dims, spin) per visible car, end().
+export class WheelPool {
+  constructor(parent, max = 640) {
+    this.mesh = new THREE.InstancedMesh(unitWheel(), bodyMat, max);
+    this.mesh.frustumCulled = false;
+    this.mesh.count = 0;
+    this.max = max;
+    this.n = 0;
+    parent.add(this.mesh);
+    this._l = new THREE.Matrix4();
+    this._m = new THREE.Matrix4();
+    this._p = new THREE.Vector3();
+    this._q = new THREE.Quaternion();
+    this._s = new THREE.Vector3();
+    this._x = new THREE.Vector3(1, 0, 0);
+  }
+  begin() {
+    this.n = 0;
+  }
+  add(carMesh, dims, spin) {
+    carMesh.updateMatrix();
+    this._q.setFromAxisAngle(this._x, spin);
+    this._s.set(WHEEL_W, dims.wr, dims.wr);
+    for (const [x, z] of dims.spots) {
+      if (this.n >= this.max) return;
+      this._l.compose(this._p.set(x, dims.wr, z), this._q, this._s);
+      this._m.multiplyMatrices(carMesh.matrix, this._l);
+      this.mesh.setMatrixAt(this.n++, this._m);
+    }
+  }
+  end() {
+    this.mesh.count = this.n;
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
+// one shared unit wheel (radius 1, width 1) for every car, scaled per car
+let unitWheelGeo = null;
+export function unitWheel() {
+  if (!unitWheelGeo) {
+    const b = new Builder();
+    b.wheel(0, 0, 0, 1, 1);
+    unitWheelGeo = b.geometry();
+  }
+  return unitWheelGeo;
+}
+const WHEEL_W = 0.26;
+// wheels sit just proud of the body sides (so the body never hides them)
+const wheelX = (hw) => hw - WHEEL_W / 2 + 0.05;
 
 const GLASS = '#232c3c';
 const TRIM = '#202227';
@@ -114,9 +177,12 @@ function lights(b, L, W, y, h, side, colTail, colHead, headY, headH, opts = {}) 
 function mirrors(B, hw, belt, zm, color, big = 1) {
   const h = 0.15 * big, d = 0.1;
   for (const s of [1, -1]) {
-    const xi = s * (hw - 0.03), xo = s * (hw + 0.17 * big);
-    B.box(Math.min(xi, xo), Math.max(xi, xo), belt - 0.02, belt + 0.05, zm - 0.05, zm + 0.04, color); // stub
-    B.box(Math.min(s * (hw + 0.04), xo), Math.max(s * (hw + 0.04), xo), belt + 0.02, belt + 0.02 + h, zm - d / 2, zm + d / 2, color, { rear: '#4f5d78' });
+    // stub: starts well inside the body and stands on the door top, so none
+    // of its faces lie close to the painted side panel (no z-fighting)
+    const xi = s * (hw - 0.22), xo = s * (hw + 0.1 * big);
+    B.box(Math.min(xi, xo), Math.max(xi, xo), belt + 0.015, belt + 0.075, zm - 0.04, zm + 0.04, color, { noBottom: true });
+    const x0 = s * (hw + 0.07), x1 = s * (hw + 0.19 * big);
+    B.box(Math.min(x0, x1), Math.max(x0, x1), belt + 0.03, belt + 0.03 + h, zm - d / 2, zm + d / 2, color, { rear: '#4f5d78' });
   }
 }
 
@@ -262,22 +328,12 @@ function build(type, color, opts = {}) {
   // wheels
   const axle = opts.axles ? opts.axles[0] : type === 'bus' ? L / 2 - 2.0 : type === 'truck' ? L / 2 - 1.2 : L / 2 - 0.85;
   const rearAxle = opts.axles ? opts.axles[1] : type === 'bus' ? -L / 2 + 2.6 : type === 'truck' ? -L / 2 + 1.4 : -L / 2 + 0.9;
-  let wheelGeo = null;
-  if (opts.separateWheels) {
-    // wheels as their own meshes (steer + spin); geometry centred on the hub
-    wheelGeo = [1, -1].map((side) => {
-      const wb = new Builder();
-      wb.wheel(side * 0.001, 0, wr, 0.26);
-      const g = wb.geometry();
-      g.translate(0, -wr, 0);
-      return g;
-    });
-  } else {
-    for (const z of [axle, rearAxle]) {
-      B.wheel(hw - 0.14, z, wr, 0.26);
-      B.wheel(-hw + 0.14, z, wr, 0.26);
-    }
-  }
+  // wheel spots (x, z): drawn by a WheelPool (traffic) or as the player's
+  // own pivots; static props bake them into the body
+  const wx = wheelX(hw);
+  const spots = [[wx, axle], [-wx, axle], [wx, rearAxle], [-wx, rearAxle]];
+  if (type === 'truck') spots.push([wx, rearAxle + 1.25], [-wx, rearAxle + 1.25]);
+  if (opts.bakeWheels) for (const [x, z] of spots) B.wheel(x, wr, z, wr, WHEEL_W);
   if (type !== 'truck' && type !== 'bus' && !opts.separateWheels) B.box(-0.24, 0.24, front.y - 0.065, front.y + 0.065, front.z - 0.02, front.z + 0.01, '#cfc8ac');
   // dark underbody so the gap reads from behind
   B.box(-hw + 0.15, hw - 0.15, 0.12, 0.32, -L / 2 + 0.3, L / 2 - 0.3, '#0e0f12', { noBottom: true });
@@ -292,7 +348,7 @@ function build(type, color, opts = {}) {
     tailX: W / 2 - (lightOpt.tailW || 0.38) / 2 - 0.04,
     headY: head.y + head.h / 2,
     headX: W / 2 - 0.25,
-    wheelGeo, wr, axle, rearAxle, hw,
+    wr, axle, rearAxle, hw, spots,
     plateY: plate.y, plateZ: plate.z, frontY: front.y, frontZ: front.z,
   };
 }
@@ -312,11 +368,11 @@ export function pickType(rnd) {
   return 'sedan';
 }
 
-export function makeCar(type, color) {
-  const key = type + color;
+export function makeCar(type, color, bakeWheels = false) {
+  const key = type + color + (bakeWheels ? 'w' : '');
   let g = geoCache.get(key);
   if (!g) {
-    g = build(type, color);
+    g = build(type, color, { bakeWheels });
     geoCache.set(key, g);
   }
   const group = new THREE.Group();
@@ -355,11 +411,12 @@ export function makePlayerCar(type, color, axles, plateTex) {
   const spots = [[1, g.axle], [-1, g.axle], [1, g.rearAxle], [-1, g.rearAxle]];
   for (const [side, z] of spots) {
     const pivot = new THREE.Group();
-    const spinner = new THREE.Mesh(g.wheelGeo[side > 0 ? 1 : 0], bodyMat);
+    const spinner = new THREE.Mesh(unitWheel(), bodyMat);
+    spinner.scale.set(WHEEL_W, g.wr, g.wr);
     pivot.add(spinner);
-    pivot.position.set(side * (g.hw - 0.14), g.wr, z);
+    pivot.position.set(side * wheelX(g.hw), g.wr, z);
     group.add(pivot);
-    wheels.push({ pivot, spinner, x: side * (g.hw - 0.14), z });
+    wheels.push({ pivot, spinner, x: side * wheelX(g.hw), z });
   }
   return { group, tailMat, dims: g, type, wheels };
 }

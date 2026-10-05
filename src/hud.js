@@ -8,9 +8,9 @@ const C = {
 };
 
 
-// Menus (pause screen, controls list) go on a second canvas with twice the
-// resolution, so their text uses smaller pixels and is easier to read.
-const FINE = 2;
+// Menus (pause screen, controls list) go on a second canvas whose pixel
+// size is a whole number of device pixels picked for readability (see
+// resizeFine), so the menu text stays crisp at any screen size.
 
 export class Hud {
   constructor(canvas, fineCanvas) {
@@ -27,18 +27,21 @@ export class Hud {
   resize(w, h) {
     this.cv.width = w;
     this.cv.height = h;
-    this.fcv.width = w * FINE;
-    this.fcv.height = h * FINE;
     this.w = w;
     this.h = h;
   }
 
-  // draw with the fine canvas as the target (same API, twice the pixels)
+  resizeFine(w, h) {
+    this.fcv.width = w;
+    this.fcv.height = h;
+  }
+
+  // draw with the fine canvas as the target (same API, its own pixel size)
   fine(fn) {
     const { g, w, h } = this;
     this.g = this.fg;
-    this.w = w * FINE;
-    this.h = h * FINE;
+    this.w = this.fcv.width;
+    this.h = this.fcv.height;
     try { fn(); } finally {
       this.g = g;
       this.w = w;
@@ -73,7 +76,7 @@ export class Hud {
     const g = this.g;
     const { w, h } = this;
     g.clearRect(0, 0, w, h);
-    this.fg.clearRect(0, 0, w * FINE, h * FINE);
+    this.fg.clearRect(0, 0, this.fcv.width, this.fcv.height);
 
     if (st.photo) return; // photo mode: a clean frame
     if (st.mode === 'title') return this.drawTitle(st);

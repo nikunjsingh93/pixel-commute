@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { makeCar, CAR_COLORS } from './cars.js';
 import { hash } from './path.js';
+import { Tokyo } from './tokyo.js';
 
 const NEAR = 48; // near street centre line (d)
 const FAR = 118; // far street centre line (d)
@@ -124,6 +125,8 @@ export class ExitNet {
     // traffic light at the off-ramp junction (controls the near street)
     this.light = { s: S + 176, d: NEAR + ST_HW + 1.2, stopS: S + 172, state: 'green', t: Math.random() * 10 };
     this.cars = [];
+    this.obstacles = []; // building footprints (solid)
+    this.wires = [];
     this.built = false;
     this.glows = [];
     this.lights = [];
@@ -142,7 +145,17 @@ export class ExitNet {
     return guard;
   }
 
+  // open ground beside the ramps and around the loop (beyond the rails)
+  openD0(s) {
+    const S = this.S;
+    return s > S + 64 && s < S + 500 ? 19.3 : 21.5;
+  }
+  inOpen(s, d) {
+    return s >= this.S - 6 && s <= this.S + 566 && d >= this.openD0(s) && d <= 170;
+  }
+
   contains(s, d) {
+    if (this.inOpen(s, d)) return true;
     for (const g of this.segs) {
       if (nearest(g.pts, s, d).dist <= g.hw) return true;
     }
@@ -171,6 +184,13 @@ export class ExitNet {
     for (const p of this.pads) {
       const dist = Math.hypot(s - p.s, d - p.d), pen = dist - p.r;
       if (pen < best.pen) best = { ds: (p.s - s) / (dist || 1), dd: (p.d - d) / (dist || 1), pen };
+    }
+    {
+      // the open ground
+      const cs = Math.max(this.S - 6, Math.min(this.S + 566, s));
+      const cd = Math.max(this.openD0(cs), Math.min(170, d));
+      const dist = Math.hypot(cs - s, cd - d);
+      if (dist < best.pen) best = { ds: (cs - s) / (dist || 1), dd: (cd - d) / (dist || 1), pen: dist };
     }
     return best;
   }
@@ -237,9 +257,11 @@ export class ExitNet {
     const geo = {
       street: new GeoB(), ramp: new GeoB(), ground: new GeoB(), pave: new GeoB(), concrete: new GeoB(), rail: new GeoB(),
       dark: new GeoB(), metal: new GeoB(), lamp: new GeoB(), building: new GeoB(), shop: new GeoB(), colored: new GeoB(),
-      leaf: new GeoB(), canopy: new GeoB(),
+      leaf: new GeoB(), canopy: new GeoB(), tkFacade: new GeoB(), tkShop: new GeoB(), tkSign: new GeoB(), leafTk: new GeoB(),
     };
     geo.colored.col = '#888888';
+    geo.leafTk.col = '#4f8a3e';
+    geo.leaf.col = '#2f5a42';
     const glows = this.glows, lights = this.lights;
     const R = (k) => hash(this.f.id * 19.7 + k * 3.31);
     const wp = (s, d, y) => {
@@ -277,7 +299,7 @@ export class ExitNet {
     // flat shoulder between the highway edge and the ramps (the highway curb is cut out here)
     W.strip(geo.concrete, [[16.9, 0.012], [19.0, 0.012]], S + 88, S + 480, A, { mode: 'world', tile: 4 });
     // kerbed pavements beside the loop (inner and outer), raised 15 cm
-    ribbon(geo.pave, this.loop.map(([s, d]) => [s, d]), ST_HW * 2 + 6, 0.02);
+    ribbon(geo.pave, this.loop.map(([s, d]) => [s, d]), ST_HW * 2 + 9, 0.02);
     // streets, ramps, aux lanes on top
     ribbon(geo.street, this.loop, ST_HW * 2, 0.05);
     ribbon(geo.ramp, this.offRamp, RAMP_HW * 2, 0.05);
@@ -325,47 +347,97 @@ export class ExitNet {
       return { x: p.x, y: p.y, z: p.z, col };
     });
 
-    // city: shops along the far street (outside), offices along the near
-    // street (between highway and loop), side-street rows, and the block inside
-    const rows = [
-      // [s from, s to, front d, depth sign, street-facing side]
-      [this.sA - 30, this.sB + 30, FAR + ST_HW + 3, 1],
-      [S + 196, S + 384, NEAR - ST_HW - 3, -1],
-    ];
-    let k = 0;
-    for (const [sf, st, front, side] of rows) {
-      let s = sf;
-      while (s < st) {
-        const along = 12 + R(k++) * 14;
-        const depth = 12 + R(k++) * 10;
-        const h = side > 0 ? 10 + R(k++) * 30 : 7 + R(k++) * 8;
-        const sm = s + along / 2;
-        W.boxBuilding(geo.building, sm, front + side * depth / 2, -0.5, along, depth, h + 0.5, A, Math.floor(R(k++) * 16) / 16, Math.floor(R(k++) * 16) / 16);
-        W.shopFront(geo.shop, sm, front - side * 0.12, 0, along, side, A, R(k++));
-        s += along + 2 + R(k++) * 4;
+    // ---- the town around the loop, in the same Tokyo style as the highway.
+    // Every footprint is checked against the streets, ramps, junctions, the
+    // forecourt and the delivery bays (with room for the pavements), and
+    // becomes a solid obstacle: you can drive off the streets here.
+    const PAVE = 4.5;
+    const tk = new Tokyo(W, { geo, a: A, glows, wires: this.wires, foot: (s, d, along, across) => this.obstacles.push({ s, d, L: along, W: across, kind: 'building' }) }, R);
+    const margin = { street: ST_HW + PAVE - 0.1, ramp: RAMP_HW + 2.5, aux: AUX_HW + 2.5 };
+    const blocked = (s, d) => {
+      if (d < 20.5 || d > 172) return true;
+      for (const g of this.segs) if (nearest(g.pts, s, d).dist < margin[g.kind]) return true;
+      for (const p of this.pads) if (Math.hypot(s - p.s, d - p.d) < p.r + 3) return true;
+      if (this.fuel) {
+        const fc = this.forecourt;
+        if (s > fc.s0 - 3 && s < fc.s1 + 3 && d > fc.d0 - 3 && d < fc.d1 + 14) return true;
       }
-    }
-    // side-street rows (buildings facing the side streets, outside the loop)
-    for (const [sx, dir] of [[this.sA - ST_HW - 3, -1], [this.sB + ST_HW + 3, 1]]) {
-      for (let d = NEAR + 14; d < FAR - 12; d += 18) {
-        const h = 9 + R(k++) * 18;
-        W.boxBuilding(geo.building, sx + dir * 7, d, -0.5, 14, 15, h, A, Math.floor(R(k++) * 16) / 16, 0);
-      }
-    }
-    // inside the block: the petrol station and a small park, or offices
-    const inS0 = this.sA + ST_HW + 4, inS1 = this.sB - ST_HW - 4;
-    const inD0 = NEAR + ST_HW + 4, inD1 = FAR - ST_HW - 4;
-    if (this.fuel) this.buildStation(geo, glows, lights, A);
-    for (let s = inS0 + 8; s < inS1 - 8; s += 26) {
-      for (let d = inD0 + 10; d < inD1 - 6; d += 24) {
-        if (this.fuel && s > this.forecourt.s0 - 10 && s < this.forecourt.s1 + 10 && d < this.forecourt.d1 + 8) continue;
-        if (R(k++) < 0.35) {
-          for (let j = 0; j < 3; j++) W.tree(geo, s + R(k++) * 12, d + R(k++) * 12, 0.02, A, R(k++));
-        } else {
-          W.boxBuilding(geo.building, s + 6, d + 6, -0.5, 16, 14, 8 + R(k++) * 22, A, Math.floor(R(k++) * 16) / 16, 0);
+      for (const dr of this.drops) if (Math.hypot(s - dr.s, d - dr.d) < 3.5) return true;
+      return false;
+    };
+    // is the rectangle [sm +- along/2] x [d0 .. d1] clear?
+    const free = (sm, along, d0, d1) => {
+      const ns = Math.max(2, Math.ceil(along / 2.5)), nd = Math.max(2, Math.ceil(Math.abs(d1 - d0) / 2.5));
+      for (let i = 0; i <= ns; i++) {
+        for (let j = 0; j <= nd; j++) {
+          if (blocked(sm - along / 2 + (along * i) / ns, d0 + ((d1 - d0) * j) / nd)) return false;
         }
       }
+      return true;
+    };
+    if (this.fuel) this.buildStation(geo, glows, lights, A);
+    let k = 0;
+    // a row of street-facing buildings from s0 to s1; front d, facing side
+    // (-1: the building lies toward smaller d)
+    const row = (s0, s1, front, side, mix) => {
+      let s = s0 + R(k++) * 2;
+      while (s < s1 - 4) {
+        const shop = R(k++) < mix;
+        const along = Math.min(shop ? 5.5 + R(k++) * 4.5 : 9 + R(k++) * 4, s1 - s);
+        if (along < 4.5) break;
+        const sm = s + along / 2;
+        if (shop) {
+          const depth = 9 + R(k++) * 4;
+          if (free(sm, along, front, front + side * depth)) tk.shopHouse(sm, along, front, side, 0.02, { depth, shop: R(k++) < 0.8 });
+        } else if (free(sm, along, front, front + side * 14)) {
+          tk.house(sm, along, front, side, 0.02);
+        }
+        s += along + (R(k++) < 0.2 ? 1 + R(k++) * 2 : 0);
+      }
+    };
+    // a field of apartment / office blocks filling [s0, s1] x [d0, d1]
+    const blocks = (s0, s1, d0, d1, floorsMin, floorsMax) => {
+      for (let d = d0; d < d1 - 8; d += 20 + R(k++) * 4) {
+        let s = s0 + R(k++) * 4;
+        while (s < s1 - 8) {
+          const along = Math.min(10 + R(k++) * 9, s1 - s);
+          const depth = Math.min(10 + R(k++) * 7, d1 - d);
+          const sm = s + along / 2;
+          if (along > 7 && depth > 7 && R(k++) < 0.85 && free(sm, along, d, d + depth)) {
+            tk.backBlock(sm, along, d, 1, 0.02, floorsMin + Math.floor(R(k++) * (floorsMax - floorsMin + 1)), R(k++) < 0.25, depth);
+          }
+          s += along + 1.5 + R(k++) * 4;
+        }
+      }
+    };
+    const sNear = NEAR - ST_HW - PAVE, sFar = FAR + ST_HW + PAVE;
+    const inS0 = this.sA + ST_HW + PAVE, inS1 = this.sB - ST_HW - PAVE;
+    // between the highway and the near street: shops facing the near street
+    row(S + 186, S + 396, sNear, -1, 0.75);
+    // outside the far street: shops facing it
+    row(this.sA - 6, this.sB + 6, sFar, 1, 0.85);
+    // inside the block: shops facing both streets (the forecourt is skipped)
+    row(inS0, inS1, NEAR + ST_HW + PAVE, 1, 0.8);
+    row(inS0, inS1, FAR - ST_HW - PAVE, -1, 0.7);
+    // the middle of the block: a little park, then apartments
+    const parkS = inS0 + 18 + R(k++) * (inS1 - inS0 - 60);
+    for (let i = 0; i < 9; i++) {
+      const s = parkS + R(k++) * 30, d = 72 + R(k++) * 22;
+      if (!blocked(s, d)) W.tree(geo, s, d, 0.02, A, R(k++));
     }
+    blocks(inS0, parkS - 4, 70, 98, 3, 6);
+    blocks(parkS + 34, inS1, 70, 98, 3, 6);
+    // beyond the far street and on both sides of the loop: rows of blocks
+    blocks(S - 6, S + 566, sFar + 16, 172, 4, 9);
+    blocks(S - 6, this.sA - ST_HW - PAVE, 24, sFar + 14, 3, 7);
+    blocks(this.sB + ST_HW + PAVE, S + 566, 24, sFar + 14, 3, 7);
+    // a hedge and street trees between the highway rail and the near row
+    for (let s = S + 200; s < S + 382; s += 6 + R(k++) * 5) if (!blocked(s, 22)) tk.bush(s, 22 + R(k++) * 2, 0.4, 1.1, 1.6);
+    // utility poles + wires along the near and far streets, clear of the lamps
+    const nearLamp = (s, off) => Math.abs(((s - (this.sA + 20 + off)) % 34 + 34) % 34) < 3 || Math.abs(((s - (this.sA + 20 + off)) % 34 + 34) % 34) > 31;
+    const flat = () => 0.02;
+    tk.poles(this.sA + 20, this.sB - 20, NEAR - ST_HW - 0.7, flat, (s) => s > this.sA + 20 && s < this.sB - 20 && !nearLamp(s, 0));
+    tk.poles(this.sA + 20, this.sB - 20, FAR + ST_HW + 0.7, flat, (s) => s > this.sA + 20 && s < this.sB - 20 && !nearLamp(s, 17));
     // delivery spots: a yellow loading bay on the pavement and a lit number post
     for (const dr of this.drops) {
       geo.colored.col = '#d9a62e';
@@ -395,6 +467,15 @@ export class ExitNet {
     add(geo.colored, mats.colored);
     add(geo.leaf, mats.leaf);
     add(geo.canopy, mats.canopy);
+    add(geo.tkFacade, mats.tk.facade);
+    add(geo.tkShop, mats.tk.shop);
+    add(geo.tkSign, mats.tk.sign);
+    add(geo.leafTk, mats.tk.leaf);
+    if (this.wires.length) {
+      const wg = new THREE.BufferGeometry();
+      wg.setAttribute('position', new THREE.Float32BufferAttribute(this.wires, 3));
+      group.add(new THREE.LineSegments(wg, mats.tk.wire));
+    }
     for (const m of this.extra || []) group.add(m);
     group.position.set(A.x - W.origin.x, A.y - W.origin.y, A.z - W.origin.z);
     root.add(group);
@@ -430,6 +511,7 @@ export class ExitNet {
     // pumps
     for (const [ps, pd] of this.pumps) {
       W.obox(geo.concrete, ps, pd, 0.05, 5, 1.2, 0.2, A);
+      this.obstacles.push({ s: ps, d: pd, L: 5, W: 1.2, kind: 'island' });
       geo.colored.col = '#e8e4da';
       W.obox(geo.colored, ps, pd, 0.25, 0.9, 0.6, 1.6, A);
       geo.colored.col = '#c62a25';
@@ -439,6 +521,7 @@ export class ExitNet {
     }
     // shop behind the pumps
     W.boxBuilding(geo.building, sm, fc.d1 + 5, -0.5, 30, 10, 4.6, A, 0, 0);
+    this.obstacles.push({ s: sm, d: fc.d1 + 5, L: 30, W: 10, kind: 'building' });
     W.shopFront(geo.shop, sm, fc.d1 - 0.12, 0, 30, 1, A, 0.25);
     // tall price sign at the street
     W.obox(geo.metal, fc.s0 + 4, NEAR + ST_HW + 1.5, 0.05, 0.3, 0.3, 7, A);
@@ -455,6 +538,7 @@ export class ExitNet {
       c.mesh.position.set(x, y, z);
       const heading = p.h + c.yaw;
       c.mesh.rotation.set(0, heading, 0);
+      if (this.W.wheels) this.W.wheels.add(c.mesh, c.dims, c.t / c.dims.wr);
       const fx = Math.sin(heading), fz = Math.cos(heading);
       const lx = Math.cos(heading), lz = -Math.sin(heading);
       const braking = c.v < 3;
