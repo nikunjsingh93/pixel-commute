@@ -54,6 +54,7 @@ export class Hud {
     const { w, h } = this;
     g.clearRect(0, 0, w, h);
 
+    if (st.photo) return; // photo mode: a clean frame
     if (st.mode === 'title') return this.drawTitle(st);
     if (st.paused) return this.drawPause(st);
     if (!this.visible) return;
@@ -144,7 +145,7 @@ export class Hud {
       ['W / ↑', 'ACCELERATE'], ['S / ↓', 'BRAKE / HOLD TO REVERSE'], ['A D / < >', 'STEER'], ['SHIFT', 'HANDBRAKE'],
       ['SPACE', 'AUTOPILOT ON / OFF'], ['C', 'CAMERA: CHASE FAR COCKPIT'], ['', 'BUMPER CINEMA'],
       ['T', 'TIME OF DAY'], ['R', 'WEATHER'], ['M  /  N', 'RADIO / NEXT STATION'], ['[  ]', 'PIXEL RESOLUTION'],
-      ['P', 'PALETTE MODE'], ['U', 'HIDE HUD'], ['ESC', 'PAUSE + CONTROLS'],
+      ['P', 'PALETTE MODE'], ['F', 'PHOTO MODE'], ['U', 'HIDE HUD'], ['ESC', 'PAUSE + MENU'],
       ['PAD', 'STICK STEER  RT GAS  LT BRAKE'],
     ];
   }
@@ -176,13 +177,11 @@ export class Hud {
     g.fillRect(0, 0, w, h);
     const lines = this.controlLines(st.touch).length;
     const top = Math.max(18, Math.floor(h / 2 - (lines * 7 + 8) / 2) + 4);
-    // on touch the right half holds the menu buttons, so the list moves left
-    const cx = st.touch ? Math.floor(w * 0.27) : w / 2;
+    // the right half holds the menu buttons, so the list sits on the left
+    const cx = Math.floor(w * 0.27);
     this.text('PAUSED', cx, top - 15, C.warm, 2, 'center');
     const end = this.drawControls(st.touch, top, cx);
-    if (!st.touch && Math.floor(st.time * 1.6) % 2 === 0) {
-      this.text('ESC TO RESUME', w / 2, Math.min(h - 8, end + 5), C.ink, 1, 'center');
-    }
+    if (!st.touch) this.text('ESC TO RESUME', cx, Math.min(h - 8, end + 5), C.dim, 1, 'center');
   }
 
   drawTitle(st) {
@@ -192,12 +191,10 @@ export class Hud {
     const sc = w >= 300 ? 3 : 2;
     // soft dark bands behind the text
     g.fillStyle = 'rgba(8,10,20,0.62)';
-    g.fillRect(0, cy - 8, w, 5 * sc + 24);
-    g.fillRect(0, h - 40, w, 26);
+    g.fillRect(0, cy - 8, w, 5 * sc + 32);
     this.text('PIXEL COMMUTE', w / 2, cy, C.warm, sc, 'center');
     this.text('AN ENDLESS DRIVE INTO THE BLUE HOUR', w / 2, cy + 5 * sc + 5, C.dim, 1, 'center');
-    if (Math.floor(st.time * 1.6) % 2 === 0) this.text(st.touch ? 'TAP TO DRIVE' : 'PRESS ENTER OR CLICK TO DRIVE', w / 2, h - 34, C.ink, 1, 'center');
-    this.text(st.touch ? '≡ MENU: CAMERA, AUTOPILOT, RADIO...' : 'H FOR CONTROLS  /  SPACE FOR AUTOPILOT', w / 2, h - 22, C.dim, 1, 'center');
+    if (!st.touch && Math.floor(st.time * 1.6) % 2 === 0) this.text('ENTER TO DRIVE', w / 2, cy + 5 * sc + 14, C.ink, 1, 'center');
     g.fillStyle = C.warm;
     g.fillRect(Math.floor(w / 2 - 30), cy + 5 * sc + 2, 60, 1);
     if (this.help) this.drawHelp(st.touch);

@@ -9,6 +9,8 @@ import { Player, VMAX } from './player.js';
 import { Weather } from './weather.js';
 import { EYE } from './cockpit.js';
 import { setupTouch, isTouchDevice } from './touch.js';
+import { PhotoMode } from './photo.js';
+import { Menu } from './ui.js';
 import { SPEC } from './vehicle.js';
 import { Hud } from './hud.js';
 import { Audio } from './audio.js';
@@ -156,6 +158,13 @@ function cycleResolution() {
 
 // one-shot actions, shared by the keyboard and the touch buttons
 function action(k) {
+  if (photo.active) {
+    // photo mode: only snap / exit / look tweaks; movement keys are read every frame
+    if (k === 'Enter' || k === 'Space') photo.snap();
+    else if (k === 'Escape' || k === 'KeyF') exitPhoto();
+    else if (['KeyT', 'KeyR', 'KeyP', 'BracketLeft', 'BracketRight'].includes(k)) runAction(k);
+    return;
+  }
   if (st.mode === 'title') {
     if (k === 'Enter') startDriving();
     if (k === 'KeyH') hud.help = !hud.help;
@@ -166,8 +175,26 @@ function action(k) {
     }
     return;
   }
+  runAction(k);
+}
+
+function enterPhoto() {
+  if (st.mode !== 'drive') return;
+  st.paused = false;
+  photo.enter(camera);
+}
+function exitPhoto() {
+  photo.exit();
+  player.mesh.visible = true;
+  camState.init = false;
+}
+
+function runAction(k) {
   audio.start();
   switch (k) {
+    case 'KeyF':
+      enterPhoto();
+      break;
     case 'Space':
       player.auto = !player.auto;
       player.autoLane = nearestLane();
@@ -247,8 +274,10 @@ window.addEventListener('blur', () => keys.clear());
 
 // click / tap to start; a tap on the pause screen resumes
 window.addEventListener('pointerdown', () => {
-  if (st.mode === 'title') startDriving();
-  else if (st.paused && st.touch) st.paused = false;
+  if (photo.active) return;
+  if (st.mode === 'title') {
+    if (!st.touch) startDriving();
+  } else if (st.paused) st.paused = false;
   else audio.start();
 });
 
@@ -260,29 +289,72 @@ function enableTouch() {
   resize();
   setupTouch({
     keys,
-    press: (code) => {
-      if (st.mode === 'title') startDriving();
-      action(code);
-    },
-    driving: () => st.mode === 'drive' && !st.paused,
-    menuOpen: () => st.mode === 'drive' && st.paused,
-    state: () => ({
-      cam: CAMS[st.cam], auto: player.auto, period: look.name, weather: W.name,
-      radio: !!(audio.ctx && audio.music), station: ['88.1', '91.4', 'AM 640', '101.9'][audio.station % 4],
-      res: `${st.h}p`,
-    }),
-    fullscreen: () => {
-      const el = document.documentElement;
-      try {
-        if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-        else {
-          (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
-          screen.orientation?.lock?.('landscape').catch(() => {});
-        }
-      } catch (e) { /* not supported (iOS Safari): the PWA runs fullscreen instead */ }
-    },
+    press: (code) => action(code),
+    driving: () => st.mode === 'drive' && !st.paused && !photo.active && !anyPanelOpen(),
   });
 }
+
+function toggleFullscreen() {
+  const el = document.documentElement;
+  try {
+    if (document.fullscreenElement || document.webkitFullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else {
+      (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+      screen.orientation?.lock?.('landscape').catch(() => {});
+    }
+  } catch (e) { /* not supported (iOS Safari): the PWA runs fullscreen instead */ }
+}
+
+// ------------------------------------------------------------------ menus
+// state shown on the menu buttons
+function menuState() {
+  return {
+    cam: CAMS[st.cam], auto: player.auto, period: look.name, weather: W.name,
+    radio: !!(audio.ctx && audio.music), station: audio.stationName ? audio.stationName() : '',
+    res: `${st.h}p`, touch: st.touch,
+  };
+}
+const panels = [];
+function anyPanelOpen() {
+  return panels.some((p) => p.isOpen);
+}
+const pauseMenu = new Menu('pause-menu', [
+  { cls: 'wide primary', label: () => 'Resume', run: () => { st.paused = false; }, spin: false },
+  { label: () => 'Photo<small>mode</small>', run: () => enterPhoto(), spin: false },
+  { label: (m) => `Camera<small>${m.cam}</small>`, run: () => runAction('KeyC') },
+  { label: (m) => `Autopilot<small>${m.auto ? 'on' : 'off'}</small>`, run: () => runAction('Space'), act: (m) => m.auto },
+  { label: (m) => `Time<small>${m.period}</small>`, run: () => runAction('KeyT') },
+  { label: (m) => `Weather<small>${m.weather}</small>`, run: () => runAction('KeyR') },
+  { label: (m) => `Radio<small>${m.radio ? 'on' : 'off'}</small>`, run: () => runAction('KeyM'), act: (m) => m.radio },
+  { label: (m) => `Station<small>${m.station}</small>`, run: () => runAction('KeyN') },
+  { label: (m) => `Resolution<small>${m.res}</small>`, run: () => cycleResolution() },
+  { label: () => 'Fullscreen<small>toggle</small>', run: () => toggleFullscreen(), spin: false },
+], menuState, { right: 'max(18px, env(safe-area-inset-right))', top: '50%', transform: 'translateY(-50%)' });
+
+const titleMenu = new Menu('title-menu', [
+  { cls: 'primary', label: () => 'Drive<small>zen</small>', run: () => startDriving(), spin: false },
+  { label: () => 'Controls', run: () => { hud.help = !hud.help; }, spin: false },
+], menuState, { left: '50%', bottom: 'max(16px, 7vh)', transform: 'translateX(-50%)', '--cols': 2 });
+
+setInterval(() => {
+  pauseMenu.open(st.mode === 'drive' && st.paused && !anyPanelOpen());
+  titleMenu.open(st.mode === 'title' && !anyPanelOpen());
+}, 100);
+
+// ------------------------------------------------------------------ photo mode
+const photo = new PhotoMode({
+  keys,
+  camera,
+  touch: () => st.touch,
+  press: (code) => action(code),
+  carPos: () => player.mesh.position,
+  groundY: (x, z) => player.groundP.ground(x + world.origin.x, z + world.origin.z, {}) - world.origin.y,
+  shutter: () => audio.shutter && audio.shutter(),
+  snapCanvas: () => {
+    render(0);
+    return glCanvas;
+  },
+});
 if (isTouchDevice()) enableTouch();
 else window.addEventListener('touchstart', enableTouch, { once: true, passive: true });
 
@@ -352,6 +424,13 @@ function maybeRebase() {
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 function updateCamera(dt, car) {
+  if (photo.active) {
+    photo.update(dt);
+    photo.apply(camera);
+    player.mesh.visible = !photo.hideCar;
+    player.cockpit.setVisible(false);
+    return;
+  }
   const mode = CAMS[st.cam];
   const o = world.origin;
   const V = player.veh;
@@ -468,7 +547,8 @@ function streak(x, y, z, groundY, r, g, b, size) {
 
 function step(dt) {
   st.time += dt;
-  if (!st.paused) {
+  const frozen = st.paused || photo.active;
+  if (!frozen) {
     st.hour = (st.hour + dt * st.timeScale) % 24;
   }
   readInput();
@@ -478,7 +558,7 @@ function step(dt) {
       player.autoLane = 1;
     }
   }
-  if (!st.paused) {
+  if (!frozen) {
     const inp = st.mode === 'title' ? { throttle: 0, brake: 0, steer: 0, any: false } : input;
     player.update(dt, inp, traffic);
     traffic.update(dt, player);
@@ -588,7 +668,7 @@ function render(dt) {
   hud.draw({
     mode: st.mode, hour: st.hour, period: look.name, weather: W.name, odo: player.odo, closeCalls: player.closeCalls,
     speed: player.v, vmax: VMAX, auto: player.auto, music: audio.ctx && audio.music, station: audio.station,
-    time: st.time, paused: st.paused, touch: st.touch, gear: player.gearLabel(), rpm: player.veh.rpm, redline: SPEC.redline,
+    time: st.time, paused: st.paused, touch: st.touch, photo: photo.active, gear: player.gearLabel(), rpm: player.veh.rpm, redline: SPEC.redline,
   }, dt);
   if (CAMS[st.cam] === 'COCKPIT') {
     const V = player.veh;
@@ -624,7 +704,7 @@ if (!HOLD) requestAnimationFrame(loop);
 
 // ------------------------------------------------------------------ dev hooks
 window.__game = {
-  st, player, traffic, world, camera, pipe, sky, renderer,
+  st, player, traffic, world, camera, pipe, sky, renderer, photo, enterPhoto, exitPhoto, pauseMenu,
   advance(sec, fps = 30) {
     const dt = 1 / fps;
     for (let t = 0; t < sec; t += dt) {

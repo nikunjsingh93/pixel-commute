@@ -146,6 +146,25 @@ export class Audio {
     this.crackle.g.gain.value = 0.004 + (Math.random() < 0.02 ? 0.04 : 0);
   }
 
+  // camera shutter for photo mode
+  shutter() {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    for (const [dt, f] of [[0, 2400], [0.07, 1600]]) {
+      const n = ctx.createBufferSource();
+      n.buffer = this.noise;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.25, t + dt);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dt + 0.05);
+      n.connect(bp).connect(g).connect(this.master);
+      n.start(t + dt, Math.random());
+      n.stop(t + dt + 0.06);
+    }
+  }
+
   thump(power) {
     if (!this.ctx) return;
     const ctx = this.ctx, t = ctx.currentTime;
