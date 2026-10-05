@@ -2,7 +2,8 @@
 
 An endless, relaxing highway drive: a real 3D world drawn as pixel art. It's blue hour,
 snow is falling, sodium lamps hum, tail lights smear across the wet tarmac and the city
-drifts past. There's no score to chase and no way to lose; you just drive.
+drifts past. In **zen** mode there's no score to chase and no way to lose; you just drive.
+**Commute** mode adds light goals: deliveries, a fuel tank and a little cash.
 
 **Play it: https://nikunjsingh93.github.io/pixel-commute/** (works offline and installs as an
 app: "Add to Home Screen" on phones, the install button in desktop Chrome or Edge.)
@@ -29,7 +30,9 @@ npm run deploy     # build + publish to the gh-pages branch (GitHub Pages)
 | `C` | camera: chase, far (default), cockpit, bumper, cinema |
 | `T` | next time of day: dawn, day, afternoon, sunset, blue hour, evening, night |
 | `R` | weather: snow, rain, clear, fog |
-| `M` / `N` | radio on/off, next station (generative lo-fi) |
+| `M` / `N` | radio on/off, next station |
+| `J` | jobs board (switches to commute mode) |
+| `F` | photo mode |
 | `[` `]` | pixel size (render resolution) |
 | `P` | palette mode: 8-bit palette, posterize, raw |
 | `Esc` | pause, with the full list of controls |
@@ -39,8 +42,8 @@ Gamepad: left stick steers (analog), RT/LT for gas and brake, A for the handbrak
 
 **Touch screens** get on-screen controls laid out like Open Road's: steering arrows bottom-left;
 Gas, Brake and Handbrake bottom-right; and one ☰ menu button top-right. The menu pauses the game
-and holds everything else: Camera, Autopilot, Time, Weather, Radio, Station, Resolution and
-Fullscreen, each showing its current setting. Resolution steps through the clean pixel scales your
+and holds everything else: Photo, Camera, Autopilot, Time, Weather, Radio, Station, Resolution,
+Fullscreen, Garage, Mode and Jobs, each showing its current setting. Resolution steps through the clean pixel scales your
 screen allows; the choice is remembered (so are `[` `]` on desktop). Tap Resume, or anywhere outside the menu, to keep driving.
 
 ## Install / offline (PWA)
@@ -69,12 +72,54 @@ The cockpit camera sits in the driver's seat (left-hand drive). It has a dashboa
 pixel instrument cluster (speed, gear, rpm bar), a radio display, a steering wheel that turns
 with the front wheels, A-pillars, door mirrors and a rear-view mirror.
 
-## The city
+## Along the highway
 
-Most of the highway runs open through the city: steel guard rails on both edges, pavements with
-street lights and pine trees, a row of shops with lit windows right along the road, and taller
-towers behind. Now and then the road dips into a short walled cutting with the city on top.
-Overpasses land on abutments, and lit billboards and green gantry signs pass overhead.
+The road drifts between **downtown** (towers and shop fronts), **suburbs** (houses with pitched
+roofs and fences) and the edge of the **countryside** (farms, forests, rolling hills). A toast
+names each district as you enter it. Steel guard rails line both edges; now and then the road
+dips into a walled cutting, and overpasses, billboards and green gantry signs pass overhead.
+
+A planner (`src/planner.js`) places features one after another, deterministically from the seed:
+
+* **Exits.** Signs count down at 900 m and 250 m. A decel lane splits off to an off-ramp that
+  meets a small loop of city streets: a traffic-light junction, a second junction, local
+  traffic, shops, a petrol station at most exits, and an on-ramp that merges back onto the
+  highway.
+* **Tunnels.** Tiled walls, strip lights and jet fans. Your eyes adapt, and the weather stops.
+* **The harbour bridge.** A long cable-stayed deck over water that reflects the lights, with
+  cranes, a container terminal and ships at anchor.
+* **Roadworks.** Cones, flashing amber lights, an arrow board, a work truck and a closed right
+  lane. Traffic merges early. Cones can be knocked over.
+* **Toll plazas.** A canopy, booths and barrier arms that lift as cars roll through at walking
+  pace.
+
+## Commute mode
+
+Pick **Commute** on the title screen, or **Mode** in the menu. **Drive (zen)** stays exactly as
+it was.
+
+* **Jobs** (`J` or the menu): take a delivery (cargo to an address in an upcoming exit's city
+  loop), or just pick an exit as a destination. On the highway the HUD counts down to the exit.
+  In the city, a green arrow and a beacon lead to a yellow loading bay. Stop in the bay to
+  unload. Fragile cargo pays less for every bump. Miss the exit and the job is dropped.
+* **Fuel**: each car has its own tank and thirst. Stop next to a pump at an exit's petrol station
+  to fill up. Run dry and the engine limps along at low power. Broke drivers get a few litres on
+  the house.
+* **Tolls** cost $3 and knocked cones $5. Every 10 km driven is a milestone worth $10.
+* Cash, total distance, deliveries and fuel are saved in the browser.
+
+## Garage, radio, photo mode
+
+* **Garage**: four cars with their own physics: the rear-drive **saloon**, a light front-drive
+  **hatch**, a twitchy 640 Nm **coupe** and a heavy, softly sprung **van**. Choose a paint colour
+  and type your own number plate.
+* **Radio**: four generative stations (PIXEL FM lo-fi, NIGHT DRIVE synthwave, SMOOTH AM jazz,
+  CHILL ambient), each with a jingle and a DJ who mentions the time, the weather and what's
+  coming up the road. **MY MUSIC** plays your own audio files, which are kept in the browser
+  (IndexedDB).
+* **Photo mode** (`F`): the world freezes and a free camera flies within 70 m of the car
+  (WASD/QE or drag, wheel to zoom). You can change the time, weather and filter, and hide the
+  car. Snap saves a crisp upscaled PNG, or opens the share sheet on phones.
 
 ## How the pixel-art look works
 
@@ -103,7 +148,15 @@ src/
   main.js      loop, input, cameras, lighting, floating origin, dev hooks
   path.js      endless centre line (curvature + elevation noise)
   world.js     64 m chunk builder: carriageways, barriers, walls, lamps, bridges, signs, buildings
-  cars.js      low-poly vehicles from tapered boxes (sedan, lux, hatch, SUV, van, truck, bus)
+  planner.js   districts + the sequence of exits, roadworks, tunnels, tolls and the harbour
+  features.js  tunnel, harbour bridge, roadworks and toll plaza geometry
+  exits.js     an exit's road network: ramps, city loop, junctions, petrol station, local traffic
+  goals.js     commute mode: jobs, fuel, tolls, milestones, the jobs panel
+  garage.js    the four player cars, paints, plate and the garage panel
+  radio.js     stations, DJ, your own music files
+  photo.js     photo mode camera + snapshot
+  ui.js        shared DOM menus and panels
+  cars.js      low-poly vehicles from tapered boxes (sedan, lux, hatch, coupe, SUV, van, truck, bus)
   traffic.js   IDM car following + lane changes, oncoming traffic, light sprites
   vehicle.js   rigid-body car: suspension, tyres, engine, gearbox, ABS/TC (from Open Road)
   player.js    player car on the highway: barrier/traffic impulses, close calls, autopilot
@@ -114,7 +167,7 @@ src/
   fx.js        glow/streak sprites and the camera-following light pool
   weather.js   snow points / rain lines wrapped around the camera
   hud.js       pixel HUD, title screen, help (3×5 bitmap font in font.js)
-  audio.js     synthesised engine, tyres, rain and the lo-fi radio
+  audio.js     synthesised engine, tyres, rain, bumps and chimes
   textures.js  canvas-drawn road, concrete, facades, skyline, signs
 ```
 

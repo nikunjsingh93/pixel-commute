@@ -15,6 +15,7 @@ import { Garage } from './garage.js';
 import { Hud } from './hud.js';
 import { Audio } from './audio.js';
 import { Radio, STATIONS } from './radio.js';
+import { Commute } from './goals.js';
 import { Panel, button, esc } from './ui.js';
 
 const params = new URLSearchParams(location.search);
@@ -69,6 +70,8 @@ function startAudio() {
   audio.start();
   radio.start();
 }
+// commute mode (jobs, fuel, tolls, milestones); zen mode is the plain drive
+const commute = new Commute({ planner, world, player, path, hud, audio });
 
 // player headlights + a soft red glow behind the car
 const headlight = new THREE.SpotLight(0xfff0d0, 0, 90, 0.5, 0.6, 1.2);
@@ -140,7 +143,12 @@ resize();
 // ------------------------------------------------------------------ input
 const keys = new Set();
 const input = { throttle: 0, brake: 0, steer: 0, handbrake: 0, any: false, manualOverride: false, analog: false };
-function startDriving() {
+function startDriving(goal) {
+  if (goal === 'commute' && !commute.on) {
+    commute.start();
+    hud.say(`COMMUTE · $${commute.money.toFixed(0)} · PRESS J FOR JOBS`, 3.5);
+  } else if (goal === 'zen' && commute.on) commute.stop();
+  if (goal) savePref('goal', goal);
   if (st.mode === 'title') {
     st.mode = 'drive';
     player.auto = false;
@@ -182,7 +190,7 @@ function action(k) {
     return;
   }
   if (st.mode === 'title') {
-    if (k === 'Enter') startDriving();
+    if (k === 'Enter') startDriving(loadPref('goal') || 'zen');
     if (k === 'KeyH') hud.help = !hud.help;
     if (k === 'Space') {
       startDriving();
@@ -272,6 +280,9 @@ function runAction(k) {
     case 'KeyU':
       hud.visible = !hud.visible;
       break;
+    case 'KeyJ':
+      openJobs();
+      break;
     case 'Escape':
       // pause screen lists every control
       st.paused = !st.paused;
@@ -329,6 +340,7 @@ function menuState() {
     cam: CAMS[st.cam], auto: player.auto, period: look.name, weather: W.name,
     radio: !!(audio.ctx && audio.music), station: radio.label(),
     res: `${st.h}p`, touch: st.touch, car: player.def ? player.def.name : '',
+    commute: commute.on, job: commute.job ? `exit ${commute.job.f.no}` : 'pick one',
   };
 }
 const panels = [];
@@ -347,13 +359,26 @@ const pauseMenu = new Menu('pause-menu', [
   { label: (m) => `Resolution<small>${m.res}</small>`, run: () => cycleResolution() },
   { label: () => 'Fullscreen<small>toggle</small>', run: () => toggleFullscreen(), spin: false },
   { label: (m) => `Garage<small>${m.car}</small>`, run: () => openGarage(), spin: false },
+  { label: (m) => `Mode<small>${m.commute ? 'commute' : 'zen'}</small>`, run: () => startDriving(commute.on ? 'zen' : 'commute'), act: (m) => m.commute },
+  { label: (m) => `Jobs<small>${m.job}</small>`, run: () => openJobs(), show: (m) => m.commute, spin: false },
 ], menuState, { right: 'max(18px, env(safe-area-inset-right))', top: '50%', transform: 'translateY(-50%)' });
 
 const titleMenu = new Menu('title-menu', [
-  { cls: 'primary', label: () => 'Drive<small>zen</small>', run: () => startDriving(), spin: false },
+  { cls: 'primary', label: () => 'Drive<small>zen</small>', run: () => startDriving('zen'), spin: false },
+  { cls: 'primary', label: () => 'Commute<small>jobs + fuel</small>', run: () => startDriving('commute'), spin: false },
   { label: (m) => `Garage<small>${m.car}</small>`, run: () => openGarage(), spin: false },
   { label: () => 'Controls', run: () => { hud.help = !hud.help; }, spin: false },
-], menuState, { left: '50%', bottom: 'max(16px, 7vh)', transform: 'translateX(-50%)', '--cols': 3 });
+], menuState, { left: '50%', bottom: 'max(16px, 7vh)', transform: 'translateX(-50%)', '--cols': 2 });
+
+// ------------------------------------------------------------------ jobs panel
+panels.push(commute.panel);
+Object.assign(commute.panel.el.style, { left: 'auto', right: 'max(18px, env(safe-area-inset-right))', transform: 'translateY(-50%)' });
+function openJobs() {
+  if (st.mode !== 'drive' || photo.active) return;
+  if (!commute.on) startDriving('commute');
+  hud.help = false;
+  commute.open(true);
+}
 
 // ------------------------------------------------------------------ radio panel
 const radioPanel = new Panel('radio');
@@ -429,6 +454,7 @@ const garage = new Garage({
   apply: (sel) => {
     player.setCar(sel);
     savePref('car', JSON.stringify(sel));
+    commute.carChanged();
   },
   close: () => {
     garage.open(false);
@@ -711,7 +737,7 @@ let lastDistrict = '';
 const TUNNEL_FOG = new THREE.Color(0.06, 0.05, 0.04);
 function step(dt) {
   st.time += dt;
-  const frozen = st.paused || photo.active || garage.isOpen;
+  const frozen = st.paused || photo.active || garage.isOpen || commute.panel.isOpen;
   if (!frozen) {
     st.hour = (st.hour + dt * st.timeScale) % 24;
   }
@@ -727,12 +753,14 @@ function step(dt) {
     player.update(dt, inp, traffic);
     traffic.update(dt, player);
     for (const net of world.nets.values()) net.update(dt, player);
+    if (st.mode === 'drive') commute.update(dt);
     for (const e of player.events) {
       if (e.type === 'close') {
         hud.popup(e.combo > 1 ? `CLOSE CALL X${e.combo}` : 'CLOSE CALL', '#ffcd6e');
         audio.chime(e.combo);
       } else if (e.type === 'cone') {
         knockCone(e.chunk, e.cone);
+        commute.cone();
         audio.thump(0.12);
         hud.popup('CONE!', '#ff8a4a');
       } else if (e.type === 'reset') {
@@ -740,6 +768,7 @@ function step(dt) {
       } else if (e.type === 'hit') {
         st.shake = Math.max(st.shake, e.power);
         audio.thump(e.power);
+        commute.hit(e.power);
         if (e.power > 0.25) hud.popup(e.kind === 'wall' ? 'SCRAPE!' : 'BUMP!', '#ee4a33');
       }
     }
@@ -818,6 +847,7 @@ function render(dt) {
 
   traffic.render(world.origin, glows, wet, Math.max(0.35, night), st.time, streak);
   for (const net of world.nets.values()) net.render(world.origin, glows, Math.max(0.35, night), st.time);
+  commute.glows(world.origin, (...a) => glows.add(...a), st.time);
   // the showroom keeps the cars around the player out of shot
   for (const tc of traffic.cars) tc.mesh.scale.setScalar(garage.isOpen && Math.abs(tc.s - player.s) < 25 ? 0 : 1);
   // nearest traffic tail lights get real red lights (wet-road shine)
@@ -867,6 +897,7 @@ function render(dt) {
   hud.draw({
     mode: st.mode, hour: st.hour, period: look.name, weather: W.name, odo: player.odo, closeCalls: player.closeCalls,
     speed: player.v, vmax: VMAX, auto: player.auto, music: audio.ctx && audio.music, stationName: radio.label(),
+    commute: st.mode === 'drive' ? commute.hudState() : null,
     time: st.time, paused: st.paused, touch: st.touch, photo: photo.active || garage.isOpen, gear: player.gearLabel(), rpm: player.veh.rpm, redline: player.veh.spec.redline,
   }, dt);
   if (CAMS[st.cam] === 'COCKPIT') {
@@ -902,7 +933,7 @@ if (!HOLD) requestAnimationFrame(loop);
 
 // ------------------------------------------------------------------ dev hooks
 window.__game = {
-  st, player, traffic, world, planner, camera, garage, openGarage, radio, openRadio, audio, pipe, sky, renderer, photo, enterPhoto, exitPhoto, pauseMenu,
+  st, player, traffic, world, planner, commute, openJobs, camera, garage, openGarage, radio, openRadio, audio, pipe, sky, renderer, photo, enterPhoto, exitPhoto, pauseMenu,
   advance(sec, fps = 30) {
     const dt = 1 / fps;
     for (let t = 0; t < sec; t += dt) {

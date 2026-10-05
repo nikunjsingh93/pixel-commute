@@ -79,6 +79,8 @@ export class Hud {
       if (st.closeCalls > 0) this.text(`CLOSE CALLS ${st.closeCalls}`, w - pad, pad + 7, C.dim, 1, 'right');
     }
 
+    if (st.commute) this.drawCommute(st.commute, touch, dt);
+
     // speedometer: bottom-left (keyboard) or top-left (touch)
     const kmh = Math.round(st.speed * 3.6);
     const sx = pad, sy = touch ? pad + 18 : h - pad - 17;
@@ -133,6 +135,52 @@ export class Hud {
     if (this.help) this.drawHelp(touch);
   }
 
+  // commute mode: cash + fuel gauge, the job and an arrow to the door
+  drawCommute(c, touch, dt) {
+    const g = this.g;
+    const pad = 4;
+    const x = touch ? pad : this.w - pad;
+    const y = touch ? pad + 54 : pad + 16;
+    const al = touch ? 'left' : 'right';
+    this.blinkT = (this.blinkT || 0) + dt * 3;
+    this.text(`$${Math.floor(c.money)}`, x, y, C.green, 1, al);
+    // fuel: E [bar] F
+    const bw = 24;
+    const bx = touch ? x + 6 : x - bw - 6;
+    const low = c.fuel < 0.2;
+    const blink = low && Math.floor(this.blinkT) % 2;
+    this.text('E', bx - 5, y + 7, low ? C.red : C.dim);
+    this.text('F', bx + bw + 2, y + 7, C.dim);
+    g.fillStyle = 'rgba(144,168,201,0.35)';
+    g.fillRect(bx, y + 8, bw, 3);
+    g.fillStyle = low ? (blink ? C.red : C.warm) : C.ink;
+    g.fillRect(bx, y + 8, Math.round(bw * Math.max(0, Math.min(1, c.fuel))), 3);
+    if (!c.lines) return;
+    // the job, top centre
+    const top = pad + 10;
+    const lw = Math.max(font.measure(c.lines[0]), font.measure(c.lines[1])) + (c.arrow !== null ? 14 : 0) + 8;
+    const lx = Math.floor(this.w / 2 - lw / 2);
+    this.panel(lx, top - 2, lw, 16);
+    const tx = c.arrow !== null ? lx + 14 : lx + 4;
+    this.text(c.lines[0], tx, top, C.warm);
+    this.text(c.lines[1], tx, top + 7, C.ink);
+    if (c.arrow !== null) this.arrow(lx + 7, top + 5, c.arrow);
+  }
+
+  // a small pixel arrow, angle 0 = straight ahead (up), + = to the right
+  arrow(cx, cy, a) {
+    const g = this.g;
+    const ux = Math.sin(a), uy = -Math.cos(a);
+    g.fillStyle = C.green;
+    const dot = (x, y) => g.fillRect(Math.round(cx + x), Math.round(cy + y), 1, 1);
+    for (let t = -4; t <= 4; t += 0.5) dot(ux * t, uy * t);
+    for (const side of [-1, 1]) {
+      const ha = a + Math.PI + side * 0.6;
+      const hx = Math.sin(ha), hy = -Math.cos(ha);
+      for (let t = 0; t <= 3; t += 0.5) dot(ux * 4 + hx * t, uy * 4 + hy * t);
+    }
+  }
+
   controlLines(touch) {
     if (touch) {
       return [
@@ -144,7 +192,7 @@ export class Hud {
       ['W / ↑', 'ACCELERATE'], ['S / ↓', 'BRAKE / HOLD TO REVERSE'], ['A D / < >', 'STEER'], ['SHIFT', 'HANDBRAKE'],
       ['SPACE', 'AUTOPILOT ON / OFF'], ['C', 'CAMERA: CHASE FAR COCKPIT'], ['', 'BUMPER CINEMA'],
       ['T', 'TIME OF DAY'], ['R', 'WEATHER'], ['M  /  N', 'RADIO / NEXT STATION'], ['[  ]', 'PIXEL RESOLUTION'],
-      ['P', 'PALETTE MODE'], ['F', 'PHOTO MODE'], ['U', 'HIDE HUD'], ['ESC', 'PAUSE + MENU'],
+      ['P', 'PALETTE MODE'], ['F', 'PHOTO MODE'], ['J', 'JOBS (COMMUTE MODE)'], ['U', 'HIDE HUD'], ['ESC', 'PAUSE + MENU'],
       ['PAD', 'STICK STEER  RT GAS  LT BRAKE'],
     ];
   }

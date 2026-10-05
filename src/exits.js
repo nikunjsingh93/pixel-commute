@@ -21,6 +21,12 @@ const STREETS = [
   ['MARKET ST', 'PINE ST', 'KING ST', 'QUEEN ST'],
 ];
 
+// delivery addresses of an exit (same order as ExitNet.drops), known before it is built
+export function exitAddresses(f) {
+  const n = STREETS[f.no % STREETS.length];
+  return [[n[1], 12], [n[1], 48], [n[0], 7], [n[2], 3], [n[3], 21]].map(([street, no]) => ({ street, no }));
+}
+
 // ---------------------------------------------------------------- polylines
 function bez(p0, p1, p2, n) {
   const out = [];
@@ -360,9 +366,14 @@ export class ExitNet {
         }
       }
     }
-    // delivery doors: a small lit doorway on each drop's building
+    // delivery spots: a yellow loading bay on the pavement and a lit number post
     for (const dr of this.drops) {
-      W.obox(geo.lamp, dr.s, dr.d + Math.sign(dr.d - NEAR - 35) * 0.4, 0.02, 1.2, 0.15, 2.2, A);
+      geo.colored.col = '#d9a62e';
+      W.obox(geo.colored, dr.s, dr.d, 0.02, 3.2, 3.2, 0.04, A);
+      geo.colored.col = '#2a2d36';
+      W.obox(geo.colored, dr.s, dr.d, 0.03, 2.6, 2.6, 0.04, A);
+      W.obox(geo.metal, dr.s + 1.7, dr.d + 1.7, 0.1, 0.12, 0.12, 1.9, A);
+      W.obox(geo.lamp, dr.s + 1.7, dr.d + 1.7, 2.0, 0.5, 0.5, 0.4, A);
     }
     // highway signage handled by the world's chunks; a gore sign at the split
     // assemble

@@ -76,6 +76,7 @@ export class Player {
     this.combo = 0;
     this.events = [];
     this.odo = 0;
+    this.throttleCap = 1; // < 1 when the tank is empty (commute mode)
     this.stuck = 0;
     this.heading = 0;
     this._p = new THREE.Vector3();
@@ -171,7 +172,7 @@ export class Player {
       this.steerSmooth += clamp(target - this.steerSmooth, -rate * dt, rate * dt);
       steer = this.steerSmooth;
     }
-    V.drive(throttle, brake, steer, hb);
+    V.drive(Math.min(throttle, this.throttleCap), brake, steer, hb);
     V.step(dt, Math.max(3, Math.ceil(dt / 0.0056)));
 
     // road-space state
