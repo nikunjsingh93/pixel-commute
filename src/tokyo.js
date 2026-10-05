@@ -10,6 +10,32 @@
 import * as THREE from 'three';
 import { hash } from './path.js';
 
+// ---------------------------------------------------------------- foliage
+// A lumpy leaf ball: an icosphere whose vertices are pushed in and out by a
+// hash of their direction (shared vertices move together, so no cracks).
+const ICO = new THREE.IcosahedronGeometry(1, 1).attributes.position.array;
+const LEAF_GREENS = ['#3d6e34', '#4a7d38', '#355f33', '#56883c', '#44733f'].map((c) => new THREE.Color(c));
+const _lc = new THREE.Color();
+export function leafBall(geo, cx, cy, cz, rx, ry, seed, tint = 0) {
+  const base = LEAF_GREENS[Math.floor(hash(seed * 3.1) * LEAF_GREENS.length)];
+  const P = [];
+  for (let i = 0; i < ICO.length; i += 3) {
+    const x = ICO[i], y = ICO[i + 1], z = ICO[i + 2];
+    const j = 0.8 + 0.4 * hash(Math.round(x * 97) * 0.131 + Math.round(y * 89) * 0.173 + Math.round(z * 83) * 0.191 + seed);
+    P.push([cx + x * rx * j, cy + y * ry * j, cz + z * rx * j]);
+  }
+  for (let i = 0; i < P.length; i += 3) {
+    const [A, B, C] = [P[i], P[i + 1], P[i + 2]];
+    // face height in the ball: darker underneath, lighter on top
+    const ny = ((A[1] + B[1] + C[1]) / 3 - cy) / ry;
+    const k = (0.55 + 0.55 * (ny * 0.5 + 0.5)) * (0.88 + 0.24 * hash(seed + i * 0.37)) * (1 + tint);
+    _lc.copy(base).multiplyScalar(k);
+    geo._col = _lc.clone();
+    const ia = geo.v(...A), ib = geo.v(...B), ic = geo.v(...C);
+    geo.tri(ia, ib, ic);
+  }
+}
+
 // ---------------------------------------------------------------- textures
 function canvas(w, h) {
   const c = document.createElement('canvas');
@@ -663,16 +689,29 @@ export class Tokyo {
   // a leafy blob: an octagonal double cone (wide in the middle), in the
   // "tree" bucket so it shares the vertex-coloured leaf greens
   bush(s, d, y, r, h) {
+    // a shrub: two to four overlapping leaf balls
     const W = this.W, a = this.c.a, geo = this.c.geo.leafTk;
-    const p = W.path.point(s, d, y);
-    const c = [p.x - a.x, p.y - a.y, p.z - a.z];
-    const greens = ['#3f7a3a', '#4f8a3e', '#356a36', '#5a9440'];
-    geo.col = greens[Math.floor(this.r() * greens.length)];
-    const rot = this.r() * 6;
-    const mid = [c[0], c[1] + h * 0.4, c[2]];
-    W.cone(geo, mid, r, h * 0.6, 7, rot);
-    geo.col = '#2c5a30';
-    W.cone(geo, mid, r, -h * 0.4, 7, rot);
+    const n = r > 0.8 ? 4 : r > 0.5 ? 3 : 2;
+    for (let i = 0; i < n; i++) {
+      const t = this.r() * 6.28, o = i === 0 ? 0 : r * 0.45;
+      const p = W.path.point(s + Math.cos(t) * o, d + Math.sin(t) * o, y + h * (0.45 + 0.12 * this.r()));
+      const rr = r * (i === 0 ? 0.8 : 0.6 + 0.15 * this.r());
+      leafBall(geo, p.x - a.x, p.y - a.y, p.z - a.z, rr, Math.min(rr, h * 0.5), this.r() * 1000);
+    }
+  }
+
+  // a leafy street tree: trunk, two branches and a crown of leaf balls
+  streetTree(s, d, base, k) {
+    const W = this.W, a = this.c.a, geo = this.c.geo;
+    const th = 2.4 * k;
+    W.obox(geo.dark, s, d, base, 0.24, 0.24, th + 0.4, a);
+    W.obox(geo.dark, s + 0.35, d, base + th - 0.5, 0.7, 0.12, 0.12, a, 0.6);
+    W.obox(geo.dark, s - 0.3, d + 0.2, base + th - 0.2, 0.6, 0.12, 0.12, a, -0.8);
+    const crown = [[0, 0, 0.9, 1.35], [0.9, 0.2, 0.55, 0.95], [-0.8, -0.3, 0.6, 0.95], [0.2, 0.85, 0.5, 0.9], [-0.2, -0.85, 0.45, 0.9], [0.1, 0, 1.45, 0.85]];
+    for (const [ds, dd, dy, r] of crown) {
+      const p = W.path.point(s + ds * k, d + dd * k, base + th + dy * k);
+      leafBall(geo.leafTk, p.x - a.x, p.y - a.y, p.z - a.z, r * k, r * k * 0.85, this.r() * 1000, dy > 1 ? 0.12 : 0);
+    }
   }
 
   // ---- pavement furniture in the band [dIn, dOut] (road side .. shop side)
@@ -700,10 +739,7 @@ export class Tokyo {
       // street tree in a square planter
       const d = at(1.4);
       W.obox(this.col('#8f8b82'), s, d, base, 1.4, 1.4, 0.35, a);
-      W.obox(geo.dark, s, d, base + 0.35, 0.22, 0.22, 2.3, a);
-      const k = 0.8 + this.r() * 0.5;
-      this.bush(s, d, base + 1.9, 1.35 * k, 2.0 * k);
-      this.bush(s + 0.3, d, base + 2.9 * k, 0.95 * k, 1.6 * k);
+      this.streetTree(s, d, base + 0.35, 0.85 + this.r() * 0.4);
     } else if (r < 0.45) {
       // long planter with shrubs
       const d = at(0.8);

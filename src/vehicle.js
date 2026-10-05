@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 
 const G = 9.81;
+const Y_UP = new THREE.Vector3(0, 1, 0);
 const V3 = THREE.Vector3, Q = THREE.Quaternion;
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 const smoothstep = (a, b, x) => {
@@ -297,7 +298,11 @@ export class Vehicle {
         const back = -fy * wl.dot(fwd);
         if (back < 0) totalF.addScaledVector(fwd, -back * 0.75 * this.throttle * (1 - smoothstep(7, 18, this.speed)));
       }
-      torque.add(this._tv2.copy(r).cross(tv));
+      // tyre forces act as if from a point 65% of the way up to the centre of
+      // mass: the grip stays, but the roll (and dive) they cause is much
+      // smaller, so a hard turn leans the car instead of tipping it over
+      this._tv2.copy(r).addScaledVector(up, -0.65 * r.dot(up));
+      torque.add(this._tv2.cross(tv));
     }
     // aerodynamics
     const sp = this.speed;
@@ -306,6 +311,14 @@ export class Vehicle {
       totalF.addScaledVector(up, -0.5 * 1.2 * 0.28 * sp * sp);
     }
     torque.addScaledVector(this.omega, -S.angDamp);
+    // roll stabiliser: pull the body back upright about its long axis and damp
+    // the roll rate (not when it is already upside down)
+    if (up.y > 0.2) {
+      const mk = S.mass / 1780;
+      const rollErr = this._tv2.copy(up).cross(Y_UP).dot(fwd); // ~ sin(roll)
+      const rollRate = this.omega.dot(fwd);
+      torque.addScaledVector(fwd, (rollErr * 14000 - rollRate * 2600) * mk);
+    }
     if (this.assist > 0 && this.speed > 4 && this.onGround > 2) {
       // yaw stability assist toward the kinematic (bicycle model) yaw rate
       const yaw = this.omega.dot(up);

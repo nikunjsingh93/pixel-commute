@@ -125,7 +125,9 @@ export class ExitNet {
     // traffic light at the off-ramp junction (controls the near street)
     this.light = { s: S + 176, d: NEAR + ST_HW + 1.2, stopS: S + 172, state: 'green', t: Math.random() * 10 };
     this.cars = [];
-    this.obstacles = []; // building footprints (solid)
+    this.obstacles = []; // building footprints, trees, crash cushions (solid)
+    this.shrubSpots = [];
+    this.treeSpots = [];
     this.wires = [];
     this.built = false;
     this.glows = [];
@@ -191,6 +193,21 @@ export class ExitNet {
       const cd = Math.max(this.openD0(cs), Math.min(170, d));
       const dist = Math.hypot(cs - s, cd - d);
       if (dist < best.pen) best = { ds: (cs - s) / (dist || 1), dd: (cd - d) / (dist || 1), pen: dist };
+    }
+    return best;
+  }
+
+  // the nearest drivable lane centre (street, ramp or aux lane) to a point,
+  // with its direction in road space (for putting a car back on the road)
+  nearestLane(s, d) {
+    let best = null;
+    for (const g of this.segs) {
+      const n = nearest(g.pts, s, d);
+      if (!best || n.dist < best.dist) {
+        const a = g.pts[n.k], b = g.pts[n.k + 1];
+        const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        best = { dist: n.dist, s: n.ps, d: n.pd, ts: (b[0] - a[0]) / l, td: (b[1] - a[1]) / l, twoWay: g.kind === 'street' };
+      }
     }
     return best;
   }
@@ -330,7 +347,56 @@ export class ExitNet {
     // guard rails: along the aux lanes and between the ramps
     const rail = (s0, s1, d) => W.guardRail(geo, s0, s1, d, -1, A);
     rail(S - 6, S + 64, AUX_D + AUX_HW + 0.05);
-    rail(S + 200, S + 380, 17.35);
+    // the gores: where each ramp parts from the highway. The highway's guard
+    // rail runs between them; each nose gets a crash cushion, the off-ramp
+    // gore its exit sign, and the triangles are planted
+    const dAt = (pts, s) => {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [sa, da] = pts[i], [sb, db] = pts[i + 1];
+        if (s >= sa && s <= sb) return da + ((db - da) * (s - sa)) / (sb - sa || 1);
+      }
+      return null;
+    };
+    const inner = (pts, s) => dAt(pts, s) - RAMP_HW;
+    let gOff = S + 120, gOn = S + 460;
+    for (let s = S + 80; s < S + 186; s += 0.5) if (inner(this.offRamp, s) > 18.4) { gOff = s; break; }
+    for (let s = S + 494; s > S + 394; s -= 0.5) if (inner(this.onRamp, s) > 18.4) { gOn = s; break; }
+    this.gores = [gOff, gOn];
+    rail(gOff, gOn, 17.35);
+    for (const [gs, dir, pts] of [[gOff, 1, this.offRamp], [gOn, -1, this.onRamp]]) {
+      const cs = gs + dir * 1.6;
+      const dm = (17.45 + inner(pts, cs)) / 2;
+      geo.colored.col = '#e8b020';
+      W.obox(geo.colored, cs, dm, 0.02, 2.6, 0.85, 0.85, A);
+      geo.colored.col = '#1c1d22';
+      for (const k of [-0.7, 0, 0.7]) W.obox(geo.colored, cs + k, dm, 0.25, 0.22, 0.88, 0.32, A);
+      this.obstacles.push({ s: cs, d: dm, L: 2.6, W: 0.85, kind: 'cushion' });
+      // shrubs and a couple of small trees in the triangle
+      for (let s = gs + dir * 6; dir > 0 ? s < S + 200 : s > S + 380; s += dir * (4 + R(700 + s) * 3)) {
+        const di = inner(pts, s);
+        if (di === null) break;
+        const gap = di - 17.6;
+        if (gap < 1.6) continue;
+        const d = 17.9 + gap / 2;
+        if (gap > 5 && R(800 + s) < 0.35) {
+          this.treeSpots.push([s, d]);
+        } else {
+          this.shrubSpots.push([s, d, Math.min(1.1, gap * 0.28)]);
+        }
+      }
+    }
+    {
+      // the gore sign: just past the off-ramp nose, between rail and ramp
+      const sg = gOff + 12, dg = (17.45 + inner(this.offRamp, sg)) / 2;
+      W.obox(geo.metal, sg, dg, 0.02, 0.15, 0.15, 2.4, A);
+      const f = P.sample(sg, {});
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.1), W.exitSign(this.f.no + 'g', [`EXIT ${this.f.no}`, '>']));
+      const q = P.point(sg - 0.1, dg, 2.85);
+      sign.position.set(q.x - A.x, q.y - A.y, q.z - A.z);
+      sign.rotation.y = Math.atan2(-f.fx, -f.fz); // faces the approaching traffic
+      this.extra = this.extra || [];
+      this.extra.push(sign);
+    }
     rail(S + 500, S + 566, AUX_D + AUX_HW + 0.05);
 
     // street lamps along the near and far streets (outside edge)
@@ -431,6 +497,24 @@ export class ExitNet {
     blocks(S - 6, S + 566, sFar + 16, 172, 4, 9);
     blocks(S - 6, this.sA - ST_HW - PAVE, 24, sFar + 14, 3, 7);
     blocks(this.sB + ST_HW + PAVE, S + 566, 24, sFar + 14, 3, 7);
+    // gore planting, then trees and shrubs on any open ground left near the
+    // ramps (solid trunks, so you can't drive through them)
+    for (const [s, d, r] of this.shrubSpots) tk.bush(s, d, 0.02, r, r * 1.5);
+    const treeAt = (s, d) => {
+      tk.streetTree(s, d, 0.02, 0.9 + R(900 + s) * 0.4);
+      this.obstacles.push({ s, d, L: 0.6, W: 0.6, kind: 'tree' });
+    };
+    for (const [s, d] of this.treeSpots) treeAt(s, d);
+    const hitsBuilding = (s, d, pad) => this.obstacles.some((o) => Math.abs(o.s - s) < o.L / 2 + pad && Math.abs(o.d - d) < o.W / 2 + pad);
+    for (let s = S + 10; s < S + 560; s += 6.5) {
+      for (let d = 23; d < NEAR - ST_HW - PAVE - 1; d += 6.5) {
+        const js = s + (R(k++) - 0.5) * 3, jd = d + (R(k++) - 0.5) * 3;
+        if (blocked(js, jd) || hitsBuilding(js, jd, 2.5)) continue;
+        const r = R(k++);
+        if (r < 0.45) treeAt(js, jd);
+        else if (r < 0.8) tk.bush(js, jd, 0.02, 0.7 + R(k++) * 0.4, 1.1);
+      }
+    }
     // a hedge and street trees between the highway rail and the near row
     for (let s = S + 200; s < S + 382; s += 6 + R(k++) * 5) if (!blocked(s, 22)) tk.bush(s, 22 + R(k++) * 2, 0.4, 1.1, 1.6);
     // utility poles + wires along the near and far streets, clear of the lamps

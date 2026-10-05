@@ -201,9 +201,35 @@ export class Player {
     this.stuck = lost ? this.stuck + dt : 0;
     if (this.stuck > 2.5) {
       this.stuck = 0;
-      this.place(this.s, LANE_D[this.nearestLane()], 15);
+      this.respawn(net);
       this.events.push({ type: 'reset' });
     }
+  }
+
+  // back on the road where the car came to grief: in an exit town that is the
+  // nearest street / ramp lane (facing the way the car was going), otherwise
+  // the nearest highway lane
+  respawn(net) {
+    const V = this.veh;
+    if (net && this.d > ROAD_R + 0.5) {
+      const p = net.nearestLane(this.s, this.d);
+      const f = this.path.sample(p.s, {});
+      // lane direction in road space; ramps keep their own direction, streets
+      // face the way the car was heading
+      let ts = p.ts, td = p.td;
+      if (p.twoWay && V.fwd.x * (f.fx * ts + f.rx * td) + V.fwd.z * (f.fz * ts + f.rz * td) < 0) { ts = -ts; td = -td; }
+      // two-way streets: keep right of the centre line (+d is right of +s)
+      const off = p.twoWay ? 1.9 : 0;
+      const s = p.s - td * off, d = p.d + ts * off;
+      const q = this.path.point(s, d, 0);
+      V.placeAt(q.x, q.y, q.z, f.fx * ts + f.rx * td, f.fz * ts + f.rz * td, 0);
+      this.groundP.hint = s;
+      this.s = s;
+      this.d = d;
+      this.v = 0;
+      return;
+    }
+    this.place(this.s, LANE_D[this.nearestLane()], 15);
   }
 
   nearestLane() {

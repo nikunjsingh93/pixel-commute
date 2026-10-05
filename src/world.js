@@ -688,11 +688,7 @@ export class World {
         this.obox(geo.dark, s + 0.12, 12.6, 5.3, 0.12, 5.6, 2.8, anchor);
         signs.push({ s: s - 0.02, d: 12.6, y: 5.3, w: 5.6, h: 2.8, mat: this.exitSign(f.no + key, lines) });
       }
-      const sg = f.s0 + 96;
-      if (sg >= s0 && sg < s1) {
-        this.obox(geo.metal, sg, 19.6, 0.02, 0.15, 0.15, 2.4, anchor);
-        signs.push({ s: sg - 0.05, d: 19.6, y: 2.3, w: 2.2, h: 1.1, mat: this.exitSign(f.no + 'g', [`EXIT ${f.no}`, '>']) });
-      }
+      // (the gore sign at the split is built with the exit, see exits.js)
     }
     // roadside billboard (lit)
     if (R(5) < 0.4 && !nearBridge(s0 + 34, 26) && isLand(s0 + 34) && P.mask(s0 + 34, 60) === 0) {
