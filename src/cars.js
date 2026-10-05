@@ -109,6 +109,17 @@ function lights(b, L, W, y, h, side, colTail, colHead, headY, headH, opts = {}) 
   b.head.box(-W / 2 + 0.08, -W / 2 + hw + 0.08, headY, headY + headH, z1 - 0.03, z1 + 0.02, colHead);
 }
 
+// door mirrors: a body-coloured housing on a stub, sitting on the door top
+// just behind the base of the windscreen pillar (glass faces backwards)
+function mirrors(B, hw, belt, zm, color, big = 1) {
+  const h = 0.15 * big, d = 0.1;
+  for (const s of [1, -1]) {
+    const xi = s * (hw - 0.03), xo = s * (hw + 0.17 * big);
+    B.box(Math.min(xi, xo), Math.max(xi, xo), belt - 0.02, belt + 0.05, zm - 0.05, zm + 0.04, color); // stub
+    B.box(Math.min(s * (hw + 0.04), xo), Math.max(s * (hw + 0.04), xo), belt + 0.02, belt + 0.02 + h, zm - d / 2, zm + d / 2, color, { rear: '#4f5d78' });
+  }
+}
+
 function build(type, color, opts = {}) {
   const t = TYPES[type];
   const { L, W } = t;
@@ -126,6 +137,7 @@ function build(type, color, opts = {}) {
   let head = { y: 0.62, h: 0.12 };
   let lightOpt = {};
   let plate = { y: 0.57, z: -L / 2 - 0.08 };
+  let front = { y: 0.37, z: L / 2 + 0.06 }; // front plate (on the bumper)
 
   if (type === 'sedan' || type === 'lux' || type === 'hatch') {
     const zr = -L / 2, zf = L / 2;
@@ -154,6 +166,7 @@ function build(type, color, opts = {}) {
     B.tbox(hw - 0.27, hw - 0.3, H - 0.06, H, ct0 - 0.02, ct1 + 0.02, ct0 + 0.04, ct1 - 0.04, color);
     // plate
     b.head.box(-0.26, 0.26, 0.5, 0.64, zr - 0.08, zr - 0.04, '#6e5a1c');
+    mirrors(B, hw, 0.92, cb1 - 0.22, color);
     if (type === 'lux') {
       B.box(-0.12, 0.12, 0.84, 0.88, zr - 0.02, zr + 0.02, '#c9c9c9'); // badge
       lightOpt = { tailW: 0.3, bar: false };
@@ -173,7 +186,9 @@ function build(type, color, opts = {}) {
     B.tbox(hw - 0.08, hw - 0.18, 1.05, H - 0.06, zr + 0.15, zf - 1.15, zr + 0.3, zf - 1.75, GLASS, { rear: '#4a5670', front: '#3c4760' });
     B.tbox(hw - 0.16, hw - 0.18, H - 0.07, H, zr + 0.3, zf - 1.75, zr + 0.34, zf - 1.8, color);
     b.head.box(-0.26, 0.26, 0.6, 0.74, zr - 0.08, zr - 0.04, '#6e5a1c');
+    mirrors(B, hw, 1.05, zf - 1.35, color);
     plate = { y: 0.67, z: zr - 0.08 };
+    front = { y: 0.44, z: zf + 0.06 };
     tail = { y: 0.9, h: 0.2 };
     head = { y: 0.78, h: 0.14 };
     lightOpt = { tailW: 0.22 };
@@ -188,7 +203,10 @@ function build(type, color, opts = {}) {
     B.box(-0.03, 0.03, 0.4, H - 0.08, zr - 0.04, zr, dark); // door split
     B.box(-hw + 0.02, hw - 0.02, 0.3, 0.55, zr - 0.08, zr + 0.2, TRIM);
     b.head.box(-0.26, 0.26, 0.6, 0.74, zr - 0.1, zr - 0.06, '#6e5a1c');
+    mirrors(B, hw - 0.04, 1.05, zf - 1.25, color, 1.4);
+    B.box(-hw + 0.04, hw - 0.04, 0.3, 0.52, zf - 0.12, zf + 0.06, TRIM); // front bumper
     plate = { y: 0.67, z: zr - 0.1 };
+    front = { y: 0.41, z: zf + 0.06 };
     tail = { y: 0.85, h: 0.42 };
     head = { y: 0.8, h: 0.14 };
     lightOpt = { tailW: 0.14 };
@@ -211,7 +229,9 @@ function build(type, color, opts = {}) {
     B.box(-hw + 0.1, hw - 0.1, 0.84, 0.89, zr + 0.04, zr + 0.34, dark); // spoiler
     for (const x of [-0.5, 0.5]) B.box(x - 0.04, x + 0.04, 0.78, 0.84, zr + 0.15, zr + 0.25, TRIM);
     b.head.box(-0.26, 0.26, 0.42, 0.56, zr - 0.08, zr - 0.04, '#6e5a1c');
+    mirrors(B, hw, 0.78, cb1 - 0.2, color);
     plate = { y: 0.49, z: zr - 0.08 };
+    front = { y: 0.27, z: zf + 0.06 };
     tail = { y: 0.6, h: 0.1 };
     head = { y: 0.52, h: 0.08 };
     lightOpt = { tailW: 0.5, bar: true, headW: 0.4 };
@@ -258,6 +278,7 @@ function build(type, color, opts = {}) {
       B.wheel(-hw + 0.14, z, wr, 0.26);
     }
   }
+  if (type !== 'truck' && type !== 'bus' && !opts.separateWheels) B.box(-0.24, 0.24, front.y - 0.065, front.y + 0.065, front.z - 0.02, front.z + 0.01, '#cfc8ac');
   // dark underbody so the gap reads from behind
   B.box(-hw + 0.15, hw - 0.15, 0.12, 0.32, -L / 2 + 0.3, L / 2 - 0.3, '#0e0f12', { noBottom: true });
 
@@ -272,7 +293,7 @@ function build(type, color, opts = {}) {
     headY: head.y + head.h / 2,
     headX: W / 2 - 0.25,
     wheelGeo, wr, axle, rearAxle, hw,
-    plateY: plate.y, plateZ: plate.z,
+    plateY: plate.y, plateZ: plate.z, frontY: front.y, frontZ: front.z,
   };
 }
 
@@ -321,6 +342,12 @@ export function makePlayerCar(type, color, axles, plateTex) {
     plate.position.set(0, g.plateY, g.plateZ - 0.012);
     plate.rotation.y = Math.PI;
     group.add(plate);
+    // and on the front bumper (on a dark backing block)
+    const fb = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.17, 0.03), new THREE.MeshLambertMaterial({ color: '#1a1b20' }));
+    fb.position.set(0, g.frontY, g.frontZ + 0.005);
+    const fp = new THREE.Mesh(plate.geometry, plate.material);
+    fp.position.set(0, g.frontY, g.frontZ + 0.04);
+    group.add(fb, fp);
   }
   // order FL, FR, RL, RR. Mesh +X is left. The pivots are meant to be moved
   // into the physics body frame (+X right), so the hub-cap side is mirrored.

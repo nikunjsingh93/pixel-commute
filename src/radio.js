@@ -1,24 +1,15 @@
-// The car radio: four generated stations with their own style, a DJ who
-// announces the station (jingle + the browser's speech voice) and talks over
-// the music now and then, and "My Music": your own audio files, kept in
-// IndexedDB so they survive a reload.
+// The car radio: four generated stations with their own style, a station
+// jingle when you tune in (and now and then between songs), and "My Music":
+// your own audio files, kept in IndexedDB so they survive a reload.
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 export const STATIONS = [
-  { id: 'pixel', name: 'PIXEL FM', freq: '88.1', say: 'Pixel F M, eighty-eight point one', style: 'lofi', bpm: 74 },
-  { id: 'night', name: 'NIGHT DRIVE', freq: '91.4', say: 'Night Drive, ninety-one point four', style: 'synth', bpm: 100 },
-  { id: 'smooth', name: 'SMOOTH AM', freq: '640', say: 'Smooth A M, six-forty', style: 'jazz', bpm: 116 },
-  { id: 'chill', name: 'CHILL', freq: '101.9', say: 'Chill, one-oh-one point nine', style: 'ambient', bpm: 60 },
-  { id: 'mine', name: 'MY MUSIC', freq: '', say: 'your own music', style: 'files' },
+  { id: 'pixel', name: 'PIXEL FM', freq: '88.1', style: 'lofi', bpm: 74 },
+  { id: 'night', name: 'NIGHT DRIVE', freq: '91.4', style: 'synth', bpm: 100 },
+  { id: 'smooth', name: 'SMOOTH AM', freq: '640', style: 'jazz', bpm: 116 },
+  { id: 'chill', name: 'CHILL', freq: '101.9', style: 'ambient', bpm: 60 },
+  { id: 'mine', name: 'MY MUSIC', freq: '', style: 'files' },
 ];
-
-const TAGLINES = {
-  pixel: ['Lo-fi beats for the long drive home.', 'Soft keys, slow roads.', 'Keep it cozy out there.'],
-  night: ['Neon, synths and an open highway.', 'Keep your eyes on the road and your hands on the wheel.', 'The night is young and so is the playlist.'],
-  smooth: ['Easy jazz for the evening commute.', 'Loosen your tie, it is a long way home.', 'Swing a little, brake a little.'],
-  chill: ['Breathe out. Nothing to rush tonight.', 'Ambient sounds for empty roads.', 'Let the city lights drift by.'],
-  mine: ['Here is your own mix.'],
-};
 
 // ---------------------------------------------------------------- my music storage
 const DB = 'pixel-commute';
@@ -55,16 +46,13 @@ async function dbDel(id) {
 }
 
 export class Radio {
-  // info(): { hour, period, weather, ahead: { type, dist, no, name } | null }
-  constructor(audio, info) {
+  constructor(audio) {
     this.a = audio;
-    this.info = info;
     this.index = 0;
     this.dj = true;
     this.tracks = [];
     this.trackIdx = 0;
     this.nowPlaying = '';
-    this.talking = false;
     this.nextTalk = 140;
     this.t = 0;
     try {
@@ -143,13 +131,13 @@ export class Radio {
     const t = this.a.ctx.currentTime;
     const files = this.station.style === 'files';
     const on = this.a.music;
-    this.a.musicBus.gain.setTargetAtTime(on && !files ? (this.talking ? 0.16 : 0.55) : 0, t, 0.25);
-    this.fileGain.gain.setTargetAtTime(on && files ? (this.talking ? 0.2 : 0.75) : 0, t, 0.25);
+    this.a.musicBus.gain.setTargetAtTime(on && !files ? 0.55 : 0, t, 0.25);
+    this.fileGain.gain.setTargetAtTime(on && files ? 0.75 : 0, t, 0.25);
     if (files && on && this.el && this.el.paused && this.el.src) this.el.play().catch(() => {});
     if ((!on || !files) && this.el && !this.el.paused) this.el.pause();
   }
 
-  // ---------------------------------------------------------------- DJ
+  // ---------------------------------------------------------------- jingle
   jingle() {
     const a = this.a;
     if (!a.ctx) return;
@@ -161,53 +149,6 @@ export class Radio {
 
   ident() {
     this.jingle();
-    const s = this.station;
-    if (s.style === 'files') {
-      this.say(this.tracks.length ? 'Here is your own music.' : 'No tracks yet. Add some music in the radio menu.', 900);
-      return;
-    }
-    const line = TAGLINES[s.id][(Math.random() * TAGLINES[s.id].length) | 0];
-    this.say(`You are listening to ${s.say}. ${line}`, 900);
-  }
-
-  // an occasional DJ segment: time, weather, or a traffic note about what is ahead
-  chatter() {
-    const s = this.station;
-    if (s.style === 'files') return;
-    const I = this.info();
-    const h = Math.floor(I.hour) % 24, m = Math.floor((I.hour % 1) * 60);
-    const time = `${((h + 11) % 12) + 1}${m < 10 ? ' oh ' + m : ' ' + m} ${h < 12 ? 'A M' : 'P M'}`;
-    const wx = { SNOW: 'snow is falling, so give yourself some room', RAIN: 'the roads are wet, take it slow', CLEAR: 'clear skies over the city', FOG: 'fog is rolling in, keep your lights on' }[I.weather] || 'calm out there';
-    const lines = [`It is ${time} and ${wx}.`, `${s.say}. ${TAGLINES[s.id][(Math.random() * TAGLINES[s.id].length) | 0]}`];
-    const ah = I.ahead;
-    if (ah) {
-      const km = ah.dist > 1000 ? `${(ah.dist / 1000).toFixed(1)} kilometers` : `${Math.round(ah.dist / 100) * 100} meters`;
-      if (ah.type === 'works') lines.push(`Traffic update: roadworks in ${km}, the right lane is closed. Merge early.`);
-      if (ah.type === 'toll') lines.push(`Heads up, toll plaza in ${km}. Keep your lane and slow down.`);
-      if (ah.type === 'tunnel') lines.push(`Tunnel coming up in ${km}. Lights on.`);
-      if (ah.type === 'harbor') lines.push(`The harbor bridge is ${km} ahead. Enjoy the view.`);
-      if (ah.type === 'exit') lines.push(`Exit ${ah.no}, ${ah.name.toLowerCase()}, is ${km} ahead.`);
-    }
-    this.jingle();
-    this.say(lines[(Math.random() * lines.length) | 0], 900);
-  }
-
-  say(text, delay = 0) {
-    if (!this.dj || !window.speechSynthesis || !this.a.music) return;
-    setTimeout(() => {
-      try {
-        const u = new SpeechSynthesisUtterance(text);
-        const voices = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
-        if (voices.length) u.voice = voices.find((v) => /male|david|daniel|guy|alex/i.test(v.name)) || voices[0];
-        u.rate = 1.02;
-        u.pitch = 0.9;
-        u.volume = 0.9;
-        u.onstart = () => { this.talking = true; this.applyGains(); };
-        u.onend = u.onerror = () => { this.talking = false; this.applyGains(); };
-        speechSynthesis.cancel();
-        speechSynthesis.speak(u);
-      } catch (e) { /* speech not available */ }
-    }, delay);
   }
 
   update(dt) {
@@ -215,7 +156,7 @@ export class Radio {
     this.t += dt;
     if (this.dj && this.a.music && this.t > this.nextTalk) {
       this.nextTalk = this.t + 160 + Math.random() * 120;
-      this.chatter();
+      this.jingle();
     }
   }
 

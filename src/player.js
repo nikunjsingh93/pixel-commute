@@ -113,6 +113,7 @@ export class Player {
       for (const wh of this.veh.wheels) { wh.omega = old.fwdSpeed / spec.radius; wh.comp = 0.09; wh.prevComp = 0.09; }
       this.veh.updateBasis();
       this.veh.fwdSpeed = old.fwdSpeed;
+      this.veh.settleHubs();
     }
     this.dims = car.dims;
     this.L = car.dims.L;

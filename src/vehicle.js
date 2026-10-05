@@ -398,6 +398,17 @@ export class Vehicle {
     return 1 / S.mass + (c * c) / S.inertia.y;
   }
 
+  // put the wheel hubs on the ground without stepping (a freshly swapped car
+  // is drawn before its first physics step, e.g. in the paused garage)
+  settleHubs() {
+    const S = this.spec, org = this._org, up = this.up;
+    for (const wh of this.wheels) {
+      org.copy(wh.local).applyQuaternion(this.quat).add(this.pos);
+      const t0 = this._raycast(org, up, S.rayLen);
+      wh.hub.copy(org).addScaledVector(up, -((t0 >= 0 ? t0 : S.rayLen) - S.radius));
+    }
+  }
+
   pointVel(point, out) {
     const r = this._tv2.copy(point).sub(this.pos);
     return out.copy(this.omega).cross(r).add(this.vel);

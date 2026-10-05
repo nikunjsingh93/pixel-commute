@@ -1,7 +1,8 @@
-// Photo mode: the world freezes, the HUD hides and a free camera flies
-// around the car. Snap saves the current pixel-art frame upscaled with
+// Photo mode: the world freezes, the HUD hides and the camera orbits the
+// car (drag / A D to circle it, wheel / W S for distance), or flies freely. Snap saves the current pixel-art frame upscaled with
 // nearest-neighbour sampling (crisp pixels) plus a tiny watermark.
-//   desktop: WASD move, Q/E down/up, drag or arrows to look, wheel to zoom,
+//   desktop: orbit: drag or A/D + Q/E to circle, W/S or wheel for distance;
+//            free (O): WASD move, Q/E down/up, drag or arrows to look, wheel to zoom;
 //            Enter/Space snap, P filter, T time, R weather, Esc/F exit
 //   touch  : d-pad + up/down + zoom buttons, drag to look, big snap button
 import * as THREE from 'three';
@@ -21,6 +22,11 @@ export class PhotoMode {
     this.fov = 50;
     this.hideCar = false;
     this.drag = null;
+    // orbit camera around the car (default) vs a free-flying one
+    this.orbit = true;
+    this.oYaw = 0;
+    this.oPitch = 0.2;
+    this.oDist = 8;
     this.buildUI();
     // look around by dragging on the picture (mouse or finger)
     window.addEventListener('pointerdown', (e) => {
@@ -30,8 +36,13 @@ export class PhotoMode {
     window.addEventListener('pointermove', (e) => {
       if (!this.drag || e.pointerId !== this.drag.id) return;
       const k = 0.005 * (this.fov / 50);
-      this.yaw -= (e.clientX - this.drag.x) * k;
-      this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch - (e.clientY - this.drag.y) * k));
+      if (this.orbit) {
+        this.oYaw -= (e.clientX - this.drag.x) * 0.008;
+        this.oPitch = Math.max(-0.1, Math.min(1.45, this.oPitch + (e.clientY - this.drag.y) * 0.006));
+      } else {
+        this.yaw -= (e.clientX - this.drag.x) * k;
+        this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch - (e.clientY - this.drag.y) * k));
+      }
       this.drag.x = e.clientX;
       this.drag.y = e.clientY;
     });
@@ -42,7 +53,8 @@ export class PhotoMode {
     window.addEventListener('pointercancel', end);
     window.addEventListener('wheel', (e) => {
       if (!this.active) return;
-      this.fov = Math.max(12, Math.min(95, this.fov * (e.deltaY > 0 ? 1.08 : 1 / 1.08)));
+      if (this.orbit) this.oDist = Math.max(2.5, Math.min(45, this.oDist * (e.deltaY > 0 ? 1.1 : 1 / 1.1)));
+      else this.fov = Math.max(12, Math.min(95, this.fov * (e.deltaY > 0 ? 1.08 : 1 / 1.08)));
     }, { passive: true });
   }
 
@@ -66,6 +78,8 @@ export class PhotoMode {
       this.carBtn.classList.toggle('act', !this.hideCar);
     });
     this.carBtn.classList.add('act');
+    this.orbitBtn = tb('Orbit', 5, () => this.toggleOrbit());
+    this.orbitBtn.classList.add('act');
     // snap (bottom-right)
     const SN = 'clamp(76px, 20vmin, 110px)';
     button(L, '', '<svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Snap</span>',
@@ -91,8 +105,36 @@ export class PhotoMode {
     this.hint = document.createElement('div');
     this.hint.style.cssText = `position:absolute;left:${bl};bottom:${bb};color:#f4f1e8;font:700 11px/1.6 'Courier New',monospace;letter-spacing:1px;
       text-shadow:0 1px 4px #000;background:rgba(10,13,24,.55);padding:6px 10px;border-radius:8px;pointer-events:none`;
-    this.hint.innerHTML = 'PHOTO MODE<br>WASD MOVE &middot; Q / E DOWN / UP &middot; SHIFT FAST<br>DRAG OR ARROWS LOOK &middot; WHEEL ZOOM<br>ENTER SNAP &middot; P FILTER &middot; ESC EXIT';
     L.appendChild(this.hint);
+    this.updateHint();
+  }
+
+  updateHint() {
+    this.hint.innerHTML = this.orbit
+      ? 'PHOTO MODE &middot; ORBIT<br>DRAG OR A / D CIRCLE THE CAR &middot; Q / E HEIGHT<br>WHEEL OR W / S DISTANCE &middot; + / - ZOOM<br>O FREE CAMERA &middot; ENTER SNAP &middot; P FILTER &middot; ESC EXIT'
+      : 'PHOTO MODE &middot; FREE<br>WASD MOVE &middot; Q / E DOWN / UP &middot; SHIFT FAST<br>DRAG OR ARROWS LOOK &middot; WHEEL ZOOM<br>O ORBIT &middot; ENTER SNAP &middot; P FILTER &middot; ESC EXIT';
+    this.orbitBtn.innerHTML = this.orbit ? 'Orbit' : 'Free';
+    this.orbitBtn.classList.toggle('act', this.orbit);
+  }
+
+  // orbit angles from wherever the camera is now
+  orbitFrom(pos) {
+    const c = this.focus();
+    const dx = pos.x - c.x, dy = pos.y - c.y, dz = pos.z - c.z;
+    this.oDist = Math.max(2.5, Math.min(45, Math.hypot(dx, dy, dz)));
+    this.oYaw = Math.atan2(dx, dz);
+    this.oPitch = Math.max(-0.1, Math.min(1.45, Math.asin(Math.max(-1, Math.min(1, dy / this.oDist)))));
+  }
+
+  focus() {
+    const c = this.g.carPos();
+    return { x: c.x, y: c.y + 0.7, z: c.z };
+  }
+
+  toggleOrbit() {
+    this.orbit = !this.orbit;
+    if (this.orbit) this.orbitFrom(this.pos);
+    this.updateHint();
   }
 
   enter(camera) {
@@ -104,6 +146,9 @@ export class PhotoMode {
     this.fov = camera.fov;
     this.hideCar = false;
     this.carBtn.classList.add('act');
+    this.orbit = true;
+    this.orbitFrom(this.pos);
+    this.updateHint();
     this.layer.classList.remove('hidden');
     const touch = this.g.touch();
     this.pad.style.display = touch ? '' : 'none';
@@ -118,6 +163,26 @@ export class PhotoMode {
 
   update(dt) {
     const K = this.g.keys;
+    if (this.orbit) {
+      const rs = 1.5 * dt;
+      if (K.has('KeyA') || K.has('ArrowLeft')) this.oYaw -= rs;
+      if (K.has('KeyD') || K.has('ArrowRight')) this.oYaw += rs;
+      if (K.has('KeyE') || K.has('ArrowUp')) this.oPitch = Math.min(1.45, this.oPitch + rs * 0.6);
+      if (K.has('KeyQ') || K.has('ArrowDown')) this.oPitch = Math.max(-0.1, this.oPitch - rs * 0.6);
+      if (K.has('KeyW')) this.oDist = Math.max(2.5, this.oDist * (1 - dt * 1.2));
+      if (K.has('KeyS')) this.oDist = Math.min(45, this.oDist * (1 + dt * 1.2));
+      if (K.has('Equal')) this.fov = Math.max(12, this.fov * (1 - dt * 0.9));
+      if (K.has('Minus')) this.fov = Math.min(95, this.fov * (1 + dt * 0.9));
+      const c = this.focus();
+      const cp = Math.cos(this.oPitch);
+      this.pos.set(c.x + Math.sin(this.oYaw) * cp * this.oDist, c.y + Math.sin(this.oPitch) * this.oDist, c.z + Math.cos(this.oYaw) * cp * this.oDist);
+      const gy = this.g.groundY(this.pos.x, this.pos.z) + 0.25;
+      if (this.pos.y < gy) this.pos.y = gy;
+      const dx = c.x - this.pos.x, dy = c.y - this.pos.y, dz = c.z - this.pos.z;
+      this.yaw = Math.atan2(-dx, -dz);
+      this.pitch = Math.atan2(dy, Math.hypot(dx, dz));
+      return;
+    }
     const fast = K.has('ShiftLeft') || K.has('ShiftRight') ? 3 : 1;
     const sp = 7 * fast * dt;
     const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);

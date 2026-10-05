@@ -25,9 +25,10 @@ npm run deploy     # build + publish to the gh-pages branch (GitHub Pages)
 | --- | --- |
 | `W` `S` / `↑` `↓` | gas, brake (hold `S` when stopped to reverse) |
 | `A` `D` / `←` `→` | steer |
-| `Shift` | handbrake |
-| `Space` | autopilot: keeps a lane, follows traffic, overtakes slow cars |
-| `C` | camera: chase, far (default), cockpit, bumper, cinema |
+| `Space` / `Shift` | handbrake |
+| `O` | autopilot: keeps a lane, follows traffic, overtakes slow cars |
+| `C` | camera: chase, far (default), cockpit, bumper |
+| mouse | look around: orbits the car in chase / far, turns your head in the cockpit; swings back after a moment |
 | `T` | next time of day: dawn, day, afternoon, sunset, blue hour, evening, night |
 | `R` | weather: snow, rain, clear, fog |
 | `M` / `N` | radio on/off, next station |
@@ -114,12 +115,12 @@ it was.
   **hatch**, a twitchy 640 Nm **coupe** and a heavy, softly sprung **van**. Choose a paint colour
   and type your own number plate.
 * **Radio**: four generative stations (PIXEL FM lo-fi, NIGHT DRIVE synthwave, SMOOTH AM jazz,
-  CHILL ambient), each with a jingle and a DJ who mentions the time, the weather and what's
-  coming up the road. **MY MUSIC** plays your own audio files, which are kept in the browser
-  (IndexedDB).
-* **Photo mode** (`F`): the world freezes and a free camera flies within 70 m of the car
-  (WASD/QE or drag, wheel to zoom). You can change the time, weather and filter, and hide the
-  car. Snap saves a crisp upscaled PNG, or opens the share sheet on phones.
+  CHILL ambient), each with its own jingle. **MY MUSIC** plays your own audio files, which are
+  kept in the browser (IndexedDB).
+* **Photo mode** (`F`): the world freezes and the camera orbits the car. Drag or use A/D to
+  circle it (front, sides, top), and the wheel or W/S to change the distance. `O` (or the
+  Orbit button) switches to a free camera that flies within 70 m (WASD/QE, drag to look). You
+  can change the time, weather and filter, and hide the car. Snap saves a crisp upscaled PNG, or opens the share sheet on phones.
 
 ## How the pixel-art look works
 
@@ -153,7 +154,7 @@ src/
   exits.js     an exit's road network: ramps, city loop, junctions, petrol station, local traffic
   goals.js     commute mode: jobs, fuel, tolls, milestones, the jobs panel
   garage.js    the four player cars, paints, plate and the garage panel
-  radio.js     stations, DJ, your own music files
+  radio.js     stations, jingles, your own music files
   photo.js     photo mode camera + snapshot
   ui.js        shared DOM menus and panels
   cars.js      low-poly vehicles from tapered boxes (sedan, lux, hatch, coupe, SUV, van, truck, bus)

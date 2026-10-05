@@ -61,11 +61,10 @@ player.planner = planner;
 player.world = world;
 player.groundP.world = world;
 const weather = new Weather(scene);
-const hud = new Hud(hudCanvas);
+const hud2Canvas = document.getElementById('hud2');
+const hud = new Hud(hudCanvas, hud2Canvas);
 const audio = new Audio();
-// the radio's DJ reads the clock, the weather and what is coming up
-let radioInfo = () => ({ hour: 0, weather: 'CLEAR', ahead: null });
-const radio = new Radio(audio, () => radioInfo());
+const radio = new Radio(audio);
 function startAudio() {
   audio.start();
   radio.start();
@@ -93,7 +92,7 @@ const WEATHERS = [
   { name: 'CLEAR', kind: 'none', amount: 0, wet: 0.2, snow: 0, overcast: 0, fog: 0.8 },
   { name: 'FOG', kind: 'none', amount: 0, wet: 0.45, snow: 0, overcast: 0.7, fog: 3.2 },
 ];
-const CAMS = ['CHASE', 'FAR', 'COCKPIT', 'BUMPER', 'CINEMA'];
+const CAMS = ['CHASE', 'FAR', 'COCKPIT', 'BUMPER'];
 // time-of-day presets the T key / Time button steps through
 const TIME_STOPS = [6.3, 10, 16.5, 18.4, 19.2, 20.5, 23];
 
@@ -102,7 +101,7 @@ const st = {
   hour: Number(params.get('t') || 19.2),
   timeScale: 1 / 240, // game hours per real second (1 h every 4 min)
   weather: Number(params.get('w') || 0),
-  cam: Number(params.get('cam') ?? 1),
+  cam: Math.min(3, Number(params.get('cam') ?? 1)),
   paused: false,
   time: 0,
   pixelH: Number(params.get('px') || loadPref('pixelH') || 575),
@@ -111,7 +110,9 @@ const st = {
 };
 let W = WEATHERS[st.weather];
 const camState = {
-  look: new THREE.Vector3(), init: false, cine: null, shakeT: 0,
+  look: new THREE.Vector3(), init: false, shakeT: 0,
+  // mouse look: orbit the car (chase / far) or turn the head (cockpit / bumper)
+  yaw: 0, pitch: 0, idle: 9,
   dir: new THREE.Vector3(0, 0, 1), off: new THREE.Vector3(), lookOff: new THREE.Vector3(),
 };
 
@@ -128,7 +129,7 @@ function resize() {
   pipe.setSize(w, h);
   const hs = Math.max(1, Math.round(h / 200));
   hud.resize(Math.ceil(w / hs), Math.ceil(h / hs));
-  for (const c of [glCanvas, hudCanvas]) {
+  for (const c of [glCanvas, hudCanvas, hud2Canvas]) {
     c.style.width = `${(w * scale) / dpr}px`;
     c.style.height = `${(h * scale) / dpr}px`;
   }
@@ -186,13 +187,14 @@ function action(k) {
     // photo mode: only snap / exit / look tweaks; movement keys are read every frame
     if (k === 'Enter' || k === 'Space') photo.snap();
     else if (k === 'Escape' || k === 'KeyF') exitPhoto();
+    else if (k === 'KeyO') photo.toggleOrbit();
     else if (['KeyT', 'KeyR', 'KeyP', 'BracketLeft', 'BracketRight'].includes(k)) runAction(k);
     return;
   }
   if (st.mode === 'title') {
     if (k === 'Enter') startDriving(loadPref('goal') || 'zen');
     if (k === 'KeyH') hud.help = !hud.help;
-    if (k === 'Space') {
+    if (k === 'KeyO') {
       startDriving();
       player.auto = true;
       player.autoLane = nearestLane();
@@ -219,7 +221,7 @@ function runAction(k) {
     case 'KeyF':
       enterPhoto();
       break;
-    case 'Space':
+    case 'KeyO':
       player.auto = !player.auto;
       player.autoLane = nearestLane();
       hud.say(player.auto ? 'AUTOPILOT ON - RELAX' : 'AUTOPILOT OFF');
@@ -227,6 +229,7 @@ function runAction(k) {
     case 'KeyC':
       st.cam = (st.cam + 1) % CAMS.length;
       camState.init = false;
+      camState.yaw = camState.pitch = 0;
       hud.say(`CAMERA: ${CAMS[st.cam]}`);
       break;
     case 'KeyT': {
@@ -351,7 +354,7 @@ const pauseMenu = new Menu('pause-menu', [
   { cls: 'wide primary', label: () => 'Resume', run: () => { st.paused = false; }, spin: false },
   { label: () => 'Photo<small>mode</small>', run: () => enterPhoto(), spin: false },
   { label: (m) => `Camera<small>${m.cam}</small>`, run: () => runAction('KeyC') },
-  { label: (m) => `Autopilot<small>${m.auto ? 'on' : 'off'}</small>`, run: () => runAction('Space'), act: (m) => m.auto },
+  { label: (m) => `Autopilot<small>${m.auto ? 'on' : 'off'}</small>`, run: () => runAction('KeyO'), act: (m) => m.auto },
   { label: (m) => `Time<small>${m.period}</small>`, run: () => runAction('KeyT') },
   { label: (m) => `Weather<small>${m.weather}</small>`, run: () => runAction('KeyR') },
   { label: (m) => `Radio<small>${m.radio ? m.station : 'off'}</small>`, run: () => openRadio(), act: (m) => m.radio, spin: false },
@@ -414,10 +417,9 @@ function renderRadio() {
   });
   const opt = el.querySelector('#r-opt');
   btn(opt, audio.music ? 'act' : '', audio.music ? 'Radio on' : 'Radio off', () => runAction('KeyM'));
-  btn(opt, radio.dj ? 'act' : '', radio.dj ? 'DJ on' : 'DJ off', () => {
+  btn(opt, radio.dj ? 'act' : '', radio.dj ? 'Jingles on' : 'Jingles off', () => {
     radio.dj = !radio.dj;
     radio.save();
-    if (!radio.dj && window.speechSynthesis) speechSynthesis.cancel();
   });
   const input = document.createElement('input');
   input.type = 'file';
@@ -497,7 +499,7 @@ function readInput() {
   input.throttle = up ? 1 : 0;
   input.brake = down ? 1 : 0;
   input.steer = (right ? 1 : 0) - (left ? 1 : 0);
-  input.handbrake = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 1 : 0;
+  input.handbrake = keys.has('Space') || keys.has('ShiftLeft') || keys.has('ShiftRight') ? 1 : 0;
   input.analog = false;
   // gamepad: analog steering and pedals
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -554,7 +556,29 @@ function maybeRebase() {
 // ------------------------------------------------------------------ camera
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
+const _v4 = new THREE.Vector3();
+window.addEventListener('mousemove', (e) => {
+  if (st.mode !== 'drive' || st.paused || photo.active || anyPanelOpen() || garage.isOpen) return;
+  if (!e.movementX && !e.movementY) return;
+  const inside = CAMS[st.cam] === 'COCKPIT' || CAMS[st.cam] === 'BUMPER';
+  camState.yaw -= e.movementX * 0.006;
+  if (inside) camState.yaw = Math.max(-1.9, Math.min(1.9, camState.yaw));
+  else camState.yaw = Math.atan2(Math.sin(camState.yaw), Math.cos(camState.yaw));
+  camState.pitch = Math.max(-0.2, Math.min(0.85, camState.pitch + e.movementY * 0.004));
+  camState.idle = 0;
+});
+function easeMouseLook(dt) {
+  camState.idle += dt;
+  // after 1.5 s without mouse movement the view swings back behind the car
+  if (camState.idle > 1.5) {
+    const k = 1 - Math.exp(-dt * 2.5);
+    camState.yaw -= camState.yaw * k;
+    camState.pitch -= camState.pitch * k;
+  }
+}
+
 function updateCamera(dt, car) {
+  easeMouseLook(dt);
   if (photo.active) {
     photo.update(dt);
     photo.apply(camera);
@@ -604,16 +628,19 @@ function updateCamera(dt, car) {
     const far = mode === 'FAR';
     const big = Math.sqrt(player.L / 5.2) * (0.85 + 0.15 * (player.dims.H / 1.64));
     const dist = (far ? 11.5 : 6.6) * big, height = (far ? 3.5 : 1.95) * big, lookH = far ? 0.9 : 1.15;
-    const offT = _v1.copy(camState.dir).multiplyScalar(-dist);
-    offT.y = -V.spec.comH + height;
-    const lookT = _v2.copy(camState.dir).multiplyScalar(5.5);
+    const dir = _v4.copy(camState.dir).applyAxisAngle(_up, camState.yaw);
+    const cp = Math.cos(camState.pitch), spitch = Math.sin(camState.pitch);
+    const offT = _v1.copy(dir).multiplyScalar(-dist * cp);
+    offT.y = -V.spec.comH + height + dist * spitch;
+    const lookT = _v2.copy(dir).multiplyScalar(5.5 * cp);
     lookT.y = -V.spec.comH + lookH;
     if (!camState.init) {
       camState.off.copy(offT);
       camState.lookOff.copy(lookT);
     }
     // smooth the offset relative to the car, so it never trails at speed
-    const kh = 1 - Math.exp(-dt * 16), kv = 1 - Math.exp(-dt * 6);
+    const looking = camState.idle < 0.3;
+    const kh = 1 - Math.exp(-dt * (looking ? 30 : 16)), kv = 1 - Math.exp(-dt * (looking ? 30 : 6));
     camState.off.x += (offT.x - camState.off.x) * kh;
     camState.off.z += (offT.z - camState.off.z) * kh;
     camState.off.y += (offT.y - camState.off.y) * kv;
@@ -631,7 +658,9 @@ function updateCamera(dt, car) {
     const inside = mode === 'COCKPIT';
     const eye = inside ? player.cockpit.eye : _v2.set(0, 0.78, player.L / 2 - 0.1);
     player.toWorld(eye.x, eye.y, eye.z, camera.position);
-    player.toWorld(eye.x, eye.y - (inside ? 1.5 : 0.4), eye.z + 20, _v1);
+    // look 20 m ahead, turned by the mouse-look angles
+    const ly = camState.yaw, lp = camState.pitch * -0.6;
+    player.toWorld(eye.x + Math.sin(ly) * 20, eye.y - (inside ? 1.5 : 0.4) + Math.sin(lp) * 20, eye.z + Math.cos(ly) * 20, _v1);
     // the head stays fairly level: blend the car's roll/pitch with world up
     camera.up.copy(_up).applyQuaternion(V.quat).lerp(_up, 0.5).normalize();
     camera.lookAt(_v1);
@@ -639,26 +668,6 @@ function updateCamera(dt, car) {
     camera.rotateX(sy * 0.0016);
     fov = (inside ? 56 : 60) + Math.min(Math.abs(player.v) * 0.12, 6);
     near = inside ? 0.05 : 0.15;
-    camState.init = false;
-  } else {
-    // cinema: a roadside camera ahead of the car that pans as it passes
-    if (!camState.cine || player.s - camState.cine.s > 30 || camState.cine.s - player.s > 160) {
-      const spots = [
-        { d: ROAD_R + 0.4, h: 1.0 + Math.random() * 1.5 },
-        { d: ROAD_R + 3.2, h: 8.2 + Math.random() * 3 },
-        { d: -1.7, h: 1.4 + Math.random() * 2 },
-      ];
-      const sp = spots[(Math.random() * spots.length) | 0];
-      camState.cine = { s: player.s + 70 + Math.random() * 50, d: sp.d, h: sp.h };
-      camState.look.copy(carPos);
-    }
-    const c = camState.cine;
-    const p = path.point(c.s, c.d, c.h);
-    camera.position.set(p.x - o.x, p.y - o.y, p.z - o.z);
-    camState.look.lerp(carPos, Math.min(1, dt * 6));
-    camera.up.copy(_up);
-    camera.lookAt(camState.look);
-    fov = 34;
     camState.init = false;
   }
   camera.near = near;
@@ -729,10 +738,6 @@ function tunnelDepth(s) {
   return Math.min(1, Math.min(s - f.s0, f.s1 - s) / 35);
 }
 
-radioInfo = () => {
-  const f = planner.ahead(player.s, null);
-  return { hour: st.hour, weather: W.name, ahead: f ? { type: f.type, dist: f.s0 - player.s, no: f.no, name: f.name } : null };
-};
 let lastDistrict = '';
 const TUNNEL_FOG = new THREE.Color(0.06, 0.05, 0.04);
 function step(dt) {
@@ -954,6 +959,7 @@ window.__game = {
     g.imageSmoothingEnabled = false;
     g.drawImage(glCanvas, 0, 0, c.width, c.height);
     g.drawImage(hudCanvas, 0, 0, c.width, c.height);
+    g.drawImage(hud2Canvas, 0, 0, c.width, c.height);
     await fetch(`/__snap?name=${name}`, { method: 'POST', body: c.toDataURL('image/png') });
     return `${st.w}x${st.h}`;
   },

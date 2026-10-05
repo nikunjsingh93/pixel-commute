@@ -8,10 +8,16 @@ const C = {
 };
 
 
+// Menus (pause screen, controls list) go on a second canvas with twice the
+// resolution, so their text uses smaller pixels and is easier to read.
+const FINE = 2;
+
 export class Hud {
-  constructor(canvas) {
+  constructor(canvas, fineCanvas) {
     this.cv = canvas;
     this.g = canvas.getContext('2d');
+    this.fcv = fineCanvas;
+    this.fg = fineCanvas.getContext('2d');
     this.popups = [];
     this.visible = true;
     this.help = false;
@@ -21,8 +27,23 @@ export class Hud {
   resize(w, h) {
     this.cv.width = w;
     this.cv.height = h;
+    this.fcv.width = w * FINE;
+    this.fcv.height = h * FINE;
     this.w = w;
     this.h = h;
+  }
+
+  // draw with the fine canvas as the target (same API, twice the pixels)
+  fine(fn) {
+    const { g, w, h } = this;
+    this.g = this.fg;
+    this.w = w * FINE;
+    this.h = h * FINE;
+    try { fn(); } finally {
+      this.g = g;
+      this.w = w;
+      this.h = h;
+    }
   }
 
   popup(text, color = C.warm) {
@@ -52,10 +73,11 @@ export class Hud {
     const g = this.g;
     const { w, h } = this;
     g.clearRect(0, 0, w, h);
+    this.fg.clearRect(0, 0, w * FINE, h * FINE);
 
     if (st.photo) return; // photo mode: a clean frame
     if (st.mode === 'title') return this.drawTitle(st);
-    if (st.paused) return this.drawPause(st);
+    if (st.paused) return this.fine(() => this.drawPause(st));
     if (!this.visible) return;
     const touch = st.touch; // touch layout keeps the corners free for the buttons
 
@@ -189,8 +211,8 @@ export class Hud {
       ];
     }
     return [
-      ['W / ↑', 'ACCELERATE'], ['S / ↓', 'BRAKE / HOLD TO REVERSE'], ['A D / < >', 'STEER'], ['SHIFT', 'HANDBRAKE'],
-      ['SPACE', 'AUTOPILOT ON / OFF'], ['C', 'CAMERA: CHASE FAR COCKPIT'], ['', 'BUMPER CINEMA'],
+      ['W / ↑', 'ACCELERATE'], ['S / ↓', 'BRAKE / HOLD TO REVERSE'], ['A D / < >', 'STEER'], ['SPACE', 'HANDBRAKE'],
+      ['O', 'AUTOPILOT ON / OFF'], ['C', 'CAMERA: CHASE FAR COCKPIT BUMPER'], ['MOUSE', 'LOOK AROUND THE CAR'],
       ['T', 'TIME OF DAY'], ['R', 'WEATHER'], ['M  /  N', 'RADIO / NEXT STATION'], ['[  ]', 'PIXEL RESOLUTION'],
       ['P', 'PALETTE MODE'], ['F', 'PHOTO MODE'], ['J', 'JOBS (COMMUTE MODE)'], ['U', 'HIDE HUD'], ['ESC', 'PAUSE + MENU'],
       ['PAD', 'STICK STEER  RT GAS  LT BRAKE'],
@@ -214,7 +236,7 @@ export class Hud {
   }
 
   drawHelp(touch) {
-    this.drawControls(touch);
+    this.fine(() => this.drawControls(touch));
   }
 
   drawPause(st) {
@@ -226,7 +248,7 @@ export class Hud {
     const top = Math.max(18, Math.floor(h / 2 - (lines * 7 + 8) / 2) + 4);
     // the right half holds the menu buttons, so the list sits on the left
     const cx = Math.floor(w * 0.27);
-    this.text('PAUSED', cx, top - 15, C.warm, 2, 'center');
+    this.text('PAUSED', cx, top - 18, C.warm, 3, 'center');
     const end = this.drawControls(st.touch, top, cx);
     if (!st.touch) this.text('ESC TO RESUME', cx, Math.min(h - 8, end + 5), C.dim, 1, 'center');
   }

@@ -136,12 +136,6 @@ export class Cockpit {
     this.wheel.add(col);
     this.group.add(this.wheel);
 
-    // exterior door mirrors (always visible)
-    const mb = new Builder();
-    mb.box(0.93, 1.12, 0.98, 1.12, 1.0, 1.16, '#15161b', { rear: '#4f5d78' });
-    mb.box(-1.12, -0.93, 0.98, 1.12, 1.0, 1.16, '#15161b', { rear: '#4f5d78' });
-    this.exterior.add(new THREE.Mesh(mb.geometry(), interiorMat));
-
     this.group.visible = false;
     this._last = '';
   }
