@@ -1,12 +1,7 @@
 // Everything is synthesised with WebAudio: engine hum, tyre roar, rain hiss,
-// bumps, and a generative lo-fi "radio" with soft keys, bass and brushed beats.
+// bumps and chimes. The music (stations, DJ, your own files) lives in radio.js
+// and plays through the music bus set up here.
 
-const CHORDS = [
-  // Fmaj9, Em7, Dm9, Cmaj7 (+ a little variation)
-  [53, 57, 60, 64, 67], [52, 55, 59, 62, 66], [50, 53, 57, 60, 64], [48, 52, 55, 59, 62],
-  [46, 50, 53, 57, 60], [45, 48, 52, 55, 59], [50, 53, 57, 60, 65], [43, 47, 50, 53, 57],
-];
-const PROGS = [[0, 1, 2, 3], [0, 5, 2, 7], [4, 3, 6, 1], [2, 7, 0, 5]];
 const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 export class Audio {
@@ -14,7 +9,6 @@ export class Audio {
     this.ctx = null;
     this.music = true;
     this.muted = false;
-    this.station = 0;
   }
 
   start() {
@@ -88,11 +82,6 @@ export class Audio {
     this.delay.connect(dl).connect(this.musicBus);
     this.crackle = this.loopNoise('highpass', 3000, 0, this.musicBus);
 
-    this.bpm = 74;
-    this.step = 0;
-    this.nextT = ctx.currentTime + 0.2;
-    this.prog = PROGS[0];
-    this.timer = setInterval(() => this.schedule(), 50);
   }
 
   loopNoise(type, freq, gain, dest = this.master) {
@@ -115,13 +104,7 @@ export class Audio {
     if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.8, this.ctx.currentTime, 0.1);
   }
   toggleMusic() {
-    this.music = !this.music;
-    if (this.musicBus) this.musicBus.gain.setTargetAtTime(this.music ? 0.55 : 0, this.ctx.currentTime, 0.3);
-  }
-  nextStation() {
-    this.station = (this.station + 1) % PROGS.length;
-    this.prog = PROGS[this.station];
-    this.bpm = [74, 68, 80, 71][this.station];
+    this.music = !this.music; // the radio applies the gains
   }
 
   update(speed, throttle, rain, scrape, engineRpm = 2000, slip = 0) {
@@ -251,34 +234,5 @@ export class Audio {
     n.stop(t + dur + 0.02);
   }
 
-  schedule() {
-    const ctx = this.ctx;
-    const spb = 60 / this.bpm / 2; // eighth notes
-    while (this.nextT < ctx.currentTime + 0.25) {
-      const t = this.nextT;
-      const st = this.step % 64; // 4 bars of 16 eighths? (8 eighths per bar, 8 bars)
-      const bar = Math.floor(st / 8);
-      const pos = st % 8;
-      const chord = CHORDS[this.prog[Math.floor(bar / 2) % 4]];
-      // swing
-      const sw = pos % 2 === 1 ? spb * 0.18 : 0;
-      if (pos === 0) {
-        // soft keys chord, slightly strummed
-        chord.forEach((m, i) => this.note(mtof(m), t + i * 0.025, spb * 7, 0.045, 'triangle'));
-        this.note(mtof(chord[0] - 12), t, spb * 5, 0.13, 'sine');
-      }
-      if (pos === 5 && bar % 2 === 1) this.note(mtof(chord[0] - 12 + 7), t + sw, spb * 2, 0.1, 'sine');
-      // sparse melody
-      if ((pos === 3 || pos === 6) && Math.random() < 0.45) {
-        const m = chord[1 + ((Math.random() * 4) | 0)] + 12;
-        this.note(mtof(m), t + sw, spb * 3, 0.035, 'sine');
-      }
-      // drums
-      if (pos === 0 || (pos === 5 && Math.random() < 0.6)) this.drum('k', t + sw);
-      if (pos === 2 || pos === 6) this.drum('s', t + sw);
-      this.drum('h', t + sw);
-      this.nextT += spb;
-      this.step++;
-    }
-  }
+
 }

@@ -14,6 +14,8 @@ import { Menu } from './ui.js';
 import { Garage } from './garage.js';
 import { Hud } from './hud.js';
 import { Audio } from './audio.js';
+import { Radio, STATIONS } from './radio.js';
+import { Panel, button, esc } from './ui.js';
 
 const params = new URLSearchParams(location.search);
 
@@ -59,6 +61,13 @@ player.world = world;
 const weather = new Weather(scene);
 const hud = new Hud(hudCanvas);
 const audio = new Audio();
+// the radio's DJ reads the clock, the weather and what is coming up
+let radioInfo = () => ({ hour: 0, weather: 'CLEAR', ahead: null });
+const radio = new Radio(audio, () => radioInfo());
+function startAudio() {
+  audio.start();
+  radio.start();
+}
 
 // player headlights + a soft red glow behind the car
 const headlight = new THREE.SpotLight(0xfff0d0, 0, 90, 0.5, 0.6, 1.2);
@@ -136,7 +145,7 @@ function startDriving() {
     player.auto = false;
     hud.help = false;
   }
-  audio.start();
+  startAudio();
 }
 
 function nearestLane() {
@@ -196,7 +205,7 @@ function exitPhoto() {
 }
 
 function runAction(k) {
-  audio.start();
+  startAudio();
   switch (k) {
     case 'KeyF':
       enterPhoto();
@@ -234,12 +243,13 @@ function runAction(k) {
       break;
     case 'KeyM':
       audio.toggleMusic();
-      hud.say(audio.music ? 'RADIO ON' : 'RADIO OFF');
+      radio.applyGains();
+      hud.say(audio.music ? 'RADIO ON  ' + radio.label() : 'RADIO OFF');
       break;
     case 'KeyN':
       if (!audio.music) audio.toggleMusic();
-      audio.nextStation();
-      hud.say('NEW STATION');
+      radio.next();
+      hud.say(radio.label());
       break;
     case 'KeyP':
       pipe.post.uniforms.mode.value = (pipe.post.uniforms.mode.value + 1) % 3;
@@ -284,7 +294,7 @@ window.addEventListener('pointerdown', () => {
   if (st.mode === 'title') {
     if (!st.touch) startDriving();
   } else if (st.paused) st.paused = false;
-  else audio.start();
+  else startAudio();
 });
 
 // on-screen controls on touch screens (or as soon as a touch is seen)
@@ -316,7 +326,7 @@ function toggleFullscreen() {
 function menuState() {
   return {
     cam: CAMS[st.cam], auto: player.auto, period: look.name, weather: W.name,
-    radio: !!(audio.ctx && audio.music), station: audio.stationName ? audio.stationName() : '',
+    radio: !!(audio.ctx && audio.music), station: radio.label(),
     res: `${st.h}p`, touch: st.touch, car: player.def ? player.def.name : '',
   };
 }
@@ -331,8 +341,8 @@ const pauseMenu = new Menu('pause-menu', [
   { label: (m) => `Autopilot<small>${m.auto ? 'on' : 'off'}</small>`, run: () => runAction('Space'), act: (m) => m.auto },
   { label: (m) => `Time<small>${m.period}</small>`, run: () => runAction('KeyT') },
   { label: (m) => `Weather<small>${m.weather}</small>`, run: () => runAction('KeyR') },
-  { label: (m) => `Radio<small>${m.radio ? 'on' : 'off'}</small>`, run: () => runAction('KeyM'), act: (m) => m.radio },
-  { label: (m) => `Station<small>${m.station}</small>`, run: () => runAction('KeyN') },
+  { label: (m) => `Radio<small>${m.radio ? m.station : 'off'}</small>`, run: () => openRadio(), act: (m) => m.radio, spin: false },
+  { label: () => 'Next station<small>tune</small>', run: () => runAction('KeyN') },
   { label: (m) => `Resolution<small>${m.res}</small>`, run: () => cycleResolution() },
   { label: () => 'Fullscreen<small>toggle</small>', run: () => toggleFullscreen(), spin: false },
   { label: (m) => `Garage<small>${m.car}</small>`, run: () => openGarage(), spin: false },
@@ -343,6 +353,74 @@ const titleMenu = new Menu('title-menu', [
   { label: (m) => `Garage<small>${m.car}</small>`, run: () => openGarage(), spin: false },
   { label: () => 'Controls', run: () => { hud.help = !hud.help; }, spin: false },
 ], menuState, { left: '50%', bottom: 'max(16px, 7vh)', transform: 'translateX(-50%)', '--cols': 3 });
+
+// ------------------------------------------------------------------ radio panel
+const radioPanel = new Panel('radio');
+Object.assign(radioPanel.el.style, { left: 'auto', right: 'max(18px, env(safe-area-inset-right))', transform: 'translateY(-50%)', width: 'min(460px, 92vw)' });
+panels.push(radioPanel);
+function openRadio() {
+  startAudio();
+  radioPanel.open(true);
+  renderRadio();
+}
+function renderRadio() {
+  const el = radioPanel.el;
+  el.innerHTML = `<h2>Radio</h2>
+    <div class="ui-list" id="r-st"></div>
+    <div class="row" id="r-opt" style="margin-top:10px"></div>
+    <div style="margin-top:12px">My music</div>
+    <div class="muted">Add audio files from your device. They stay in this browser and play on MY MUSIC.</div>
+    <div class="row" id="r-add"></div>
+    <div class="ui-list" id="r-tracks"></div>
+    <div class="row" id="r-done" style="margin-top:12px"></div>`;
+  const btn = (parent, cls, html, fn) => {
+    const b = button(parent, cls, html, null, () => { fn(); renderRadio(); });
+    b.style.position = 'relative';
+    return b;
+  };
+  STATIONS.forEach((s, i) => {
+    const sel = i === radio.index && audio.music;
+    const sub = s.style === 'files' ? `${radio.tracks.length} track${radio.tracks.length === 1 ? '' : 's'}` : { lofi: 'lo-fi beats', synth: 'synthwave', jazz: 'smooth jazz', ambient: 'ambient' }[s.style];
+    btn(el.querySelector('#r-st'), sel ? 'act' : '', `${esc(s.name)} ${s.freq}<small>${sub}</small>`, () => {
+      if (!audio.music) audio.toggleMusic();
+      radio.tune(i);
+    });
+  });
+  const opt = el.querySelector('#r-opt');
+  btn(opt, audio.music ? 'act' : '', audio.music ? 'Radio on' : 'Radio off', () => runAction('KeyM'));
+  btn(opt, radio.dj ? 'act' : '', radio.dj ? 'DJ on' : 'DJ off', () => {
+    radio.dj = !radio.dj;
+    radio.save();
+    if (!radio.dj && window.speechSynthesis) speechSynthesis.cancel();
+  });
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'audio/*';
+  input.multiple = true;
+  input.style.display = 'none';
+  input.addEventListener('change', async () => {
+    await radio.addFiles(input.files);
+    if (!audio.music) audio.toggleMusic();
+    radio.tune(STATIONS.findIndex((s) => s.style === 'files'));
+    renderRadio();
+  });
+  el.appendChild(input);
+  btn(el.querySelector('#r-add'), 'primary', '+ Add music files', () => input.click());
+  const tl = el.querySelector('#r-tracks');
+  radio.tracks.forEach((t, i) => {
+    const playing = radio.station.style === 'files' && i === radio.trackIdx && audio.music;
+    btn(tl, playing ? 'act' : '', `${esc(t.name.slice(0, 40))}<small>${playing ? 'playing' : 'tap to play / x to remove'}</small>`, () => {
+      if (!audio.music) audio.toggleMusic();
+      radio.index = STATIONS.findIndex((s) => s.style === 'files');
+      radio.trackIdx = i;
+      radio.tune(radio.index, true);
+    });
+    const x = btn(tl, 'small', 'x remove', () => radio.removeTrack(t.id));
+    x.style.alignSelf = 'flex-end';
+    x.style.minHeight = '28px';
+  });
+  btn(el.querySelector('#r-done'), 'primary', 'Done', () => radioPanel.open(false));
+}
 
 // ------------------------------------------------------------------ garage
 const garage = new Garage({
@@ -624,6 +702,10 @@ function tunnelDepth(s) {
   return Math.min(1, Math.min(s - f.s0, f.s1 - s) / 35);
 }
 
+radioInfo = () => {
+  const f = planner.ahead(player.s, null);
+  return { hour: st.hour, weather: W.name, ahead: f ? { type: f.type, dist: f.s0 - player.s, no: f.no, name: f.name } : null };
+};
 let lastDistrict = '';
 const TUNNEL_FOG = new THREE.Color(0.06, 0.05, 0.04);
 function step(dt) {
@@ -668,6 +750,7 @@ function step(dt) {
     }
   }
   st.shake = Math.max(0, st.shake - dt * 2.5);
+  radio.update(dt);
   path.trim(player.s - 400);
 }
 
@@ -780,14 +863,13 @@ function render(dt) {
   pipe.render(scene, camera);
   hud.draw({
     mode: st.mode, hour: st.hour, period: look.name, weather: W.name, odo: player.odo, closeCalls: player.closeCalls,
-    speed: player.v, vmax: VMAX, auto: player.auto, music: audio.ctx && audio.music, station: audio.station,
+    speed: player.v, vmax: VMAX, auto: player.auto, music: audio.ctx && audio.music, stationName: radio.label(),
     time: st.time, paused: st.paused, touch: st.touch, photo: photo.active || garage.isOpen, gear: player.gearLabel(), rpm: player.veh.rpm, redline: player.veh.spec.redline,
   }, dt);
   if (CAMS[st.cam] === 'COCKPIT') {
     const V = player.veh;
-    const STN = ['88.1', '91.4', 'AM640', '101.9'];
     player.cockpit.update((V.wheels[0].steerA + V.wheels[1].steerA) / 2, Math.abs(V.fwdSpeed) * 3.6, V.rpm, player.gearLabel(),
-      player.veh.spec.redline, audio.ctx && audio.music ? STN[audio.station % 4] : 'OFF', st.time);
+      player.veh.spec.redline, audio.ctx && audio.music ? radio.short() : 'OFF', st.time);
   }
   audio.update(Math.abs(player.v), player.veh.throttle, W.kind === 'rain' ? 1 : 0, player.scrape, player.veh.rpm, player.veh.slip);
 }
@@ -817,7 +899,7 @@ if (!HOLD) requestAnimationFrame(loop);
 
 // ------------------------------------------------------------------ dev hooks
 window.__game = {
-  st, player, traffic, world, planner, camera, garage, openGarage, pipe, sky, renderer, photo, enterPhoto, exitPhoto, pauseMenu,
+  st, player, traffic, world, planner, camera, garage, openGarage, radio, openRadio, audio, pipe, sky, renderer, photo, enterPhoto, exitPhoto, pauseMenu,
   advance(sec, fps = 30) {
     const dt = 1 / fps;
     for (let t = 0; t < sec; t += dt) {

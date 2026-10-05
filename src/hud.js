@@ -7,7 +7,6 @@ const C = {
   panel: 'rgba(12,15,26,0.55)', green: '#5b9271',
 };
 
-const STATIONS = ['FM 88.1 LOFI', 'FM 91.4 NIGHT', 'AM 640 JAZZ', 'FM 101.9 CHILL'];
 
 export class Hud {
   constructor(canvas) {
@@ -97,7 +96,7 @@ export class Hud {
 
     // bottom-right: radio
     if (st.music && !touch) {
-      const name = STATIONS[st.station % STATIONS.length];
+      const name = st.stationName || '';
       const t = st.time;
       // little equaliser
       const ex = w - pad - 9;
