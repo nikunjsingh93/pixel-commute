@@ -9,6 +9,7 @@ import * as T from './textures.js';
 import { font } from './font.js';
 import { buildTunnel, buildHarbor, buildWorks, buildToll } from './features.js';
 import { ExitNet } from './exits.js';
+import { Tokyo, tokyoMaterials, tokyoNight } from './tokyo.js';
 
 export const CHUNK = 64;
 const DS = 4; // geometry step along the road
@@ -201,6 +202,7 @@ export class World {
     this.mStreet = new THREE.MeshStandardMaterial({ map: street, roughness: 0.6, roughnessMap: puddles, envMapIntensity: 0.35 });
     this.mRamp = new THREE.MeshStandardMaterial({ map: ramp, roughness: 0.6, roughnessMap: puddles, envMapIntensity: 0.35 });
     this.mCanopy = new THREE.MeshLambertMaterial({ color: '#e8e4da' });
+    this.tk = tokyoMaterials();
     this.exitSignMats = new Map();
   }
 
@@ -244,6 +246,7 @@ export class World {
     for (const m of this.mBoards) m.color.setScalar(0.75 + 0.75 * k);
     const on = Math.floor(time * 1.6) % 2 === 0; // roadworks arrow board flashes
     this.mArrow.color.setScalar(on ? 1.8 : 0.15);
+    tokyoNight(this.tk, k);
   }
 
   // ---------------------------------------------------------------- geometry helpers
@@ -387,10 +390,10 @@ export class World {
 
   // how far the pavement reaches on each side (0 = countryside verge)
   paveR(dist) {
-    return WALL_D + 1.3 + dist.town * (6.4 + dist.downtown * 5.3);
+    return WALL_D + 1.3 + dist.town * (6.4 + dist.downtown * 1.8);
   }
   paveL(dist) {
-    return -15.3 - dist.town * (6 + dist.downtown * 6.7);
+    return -15.3 - dist.town * (6 + dist.downtown * 2.2);
   }
 
   // steel W-beam guard rail along d. side = which way the traffic is (-1: road
@@ -465,12 +468,13 @@ export class World {
       ground: new GeoB(), grass: new GeoB(), pave: new GeoB(), metal: new GeoB(), rail: new GeoB(), dark: new GeoB(),
       lamp: new GeoB(), building: new GeoB(), shop: new GeoB(), leaf: new GeoB(), shadow: new GeoB(),
       tile: new GeoB(), water: new GeoB(), colored: new GeoB(), booth: new GeoB(), exitSign: new GeoB(),
-      house: new GeoB(), roof: new GeoB(),
+      house: new GeoB(), roof: new GeoB(), tkFacade: new GeoB(), tkShop: new GeoB(), tkSign: new GeoB(), leafTk: new GeoB(),
     };
+    geo.leafTk.col = '#4f8a3e';
     geo.colored.col = '#888888';
     const c = {
       geo, a: anchor, s0, s1, glows: [], lights: [], signs: [], boards: [], obstacles: [], cones: [],
-      meshes: [], lines: [], arms: [],
+      meshes: [], lines: [], wires: [], arms: [],
     };
     const { glows, lights, signs, boards } = c;
     const P = this.planner;
@@ -605,7 +609,7 @@ export class World {
       if (distAt(s).town > 0.4 && !inExit(s)) this.cityLamp(geo, s, WALL_D + 2.6, -1, hh(s), anchor, glows, lights);
       if (isLand(s + 8) && distAt(s + 8).town > 0.4) this.cityLamp(geo, s + 8, -16.4, 1, 0.16, anchor, glows, lights);
     }
-    // trees: a few along town pavements, forests in the countryside
+    // trees: forests in the countryside (town pavements get street trees in planters, see tokyo.js)
     for (let s = s0 + 2 + R(3) * 3, k = 0; s < s1; s += 4 + R(10 + k) * 5, k++) {
       if (nearBridge(s, 9) || !isLand(s) || (P.mask(s, 30) > 0.5 && !inExit(s))) continue;
       const dd = distAt(s);
@@ -620,9 +624,6 @@ export class World {
             const base = side > 0 ? hh(s) + (d > 50 ? hill * 0.8 * (d - 50) / 35 : 0) : 0.16;
             this.tree(geo, s + R(70 + j) * 3, d, base, anchor, R(80 + k + j));
           }
-        } else if (R(90 + k) < 0.55) {
-          if (!inExit(s)) this.tree(geo, s, this.paveR(dd) - 2.2, hh(s), anchor, R(50 + k));
-          if (R(95 + k) < 0.5) this.tree(geo, s + 3, this.paveL(dd) + 2.2, 0.16, anchor, R(51 + k));
         }
       }
     }
@@ -709,6 +710,10 @@ export class World {
     add(geo.colored, this.mColored);
     add(geo.booth, this.mBooth);
     add(geo.exitSign, this.mExitSign);
+    add(geo.tkFacade, this.tk.facade);
+    add(geo.tkShop, this.tk.shop);
+    add(geo.tkSign, this.tk.sign);
+    add(geo.leafTk, this.tk.leaf);
     const sh = add(geo.shadow, this.mShadow);
     if (sh) sh.renderOrder = 1;
     const plane = this.signGeo || (this.signGeo = new THREE.PlaneGeometry(1, 1));
@@ -763,6 +768,12 @@ export class World {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(c.lines, 3));
       group.add(new THREE.LineSegments(g, this.mCable));
+    }
+    // utility wires
+    if (c.wires.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(c.wires, 3));
+      group.add(new THREE.LineSegments(g, this.tk.wire));
     }
     // toll barrier arms (animated by main through chunk.arms)
     for (const arm of c.arms) {
@@ -826,22 +837,27 @@ export class World {
     const { geo, a, glows, s0 } = c;
     const R = (k) => hash(ci * 31.7 + k * 3.13 + 9.1);
     const P = this.planner;
+    const tk = new Tokyo(this, c, R);
+    const END = s0 + CHUNK - 0.5; // nothing may reach into the next chunk
     let k = 0;
     const clearFor = (side) => (s, along, pad) =>
-      (bridgeS === null || s + along < bridgeS - pad || s > bridgeS + pad) && isLand(s) && isLand(s + along) &&
+      (bridgeS === null || s + along < bridgeS - Math.min(pad, 8.5) || s > bridgeS + Math.min(pad, 8.5)) && isLand(s) && isLand(s + along) &&
       ((side < 0 && !P.at(s, 'tunnel', 40) && !P.at(s, 'harbor', 40) && !P.at(s, 'toll', 40)) ||
         (P.mask(s, 40) === 0 && P.mask(s + along, 40) === 0));
     for (const side of [1, -1]) {
       const clear = clearFor(side);
-      // street-front row
+      const baseAt = (s) => (side > 0 ? Math.max(this.wallH(s), 0.16) : 0.16);
+      const paveAt = (dd) => (side > 0 ? this.paveR(dd) : this.paveL(dd));
+      // ---- street-front row
       let s = s0 + R(k++) * 4;
-      while (s < s0 + CHUNK) {
+      while (s < END - 4) {
         const sm0 = s + 8;
         const dd = P.district(sm0);
-        const kind = R(k++) < dd.downtown ? 'shop' : R(k++) < dd.town * 1.1 ? 'house' : 'farm';
-        const pe = side > 0 ? this.paveR(dd) : this.paveL(dd);
+        const kind = R(k++) < dd.downtown ? 'shop' : R(k++) < dd.town * 1.1 ? 'town' : 'farm';
+        const pe = paveAt(dd);
         if (kind === 'shop') {
-          const along = 10 + R(k++) * 16;
+          const along = Math.min(10 + R(k++) * 16, END - s);
+          if (along < 6) break;
           const depth = 12 + R(k++) * 14;
           const h = R(k++) < 0.65 ? 7 + R(k++) * 14 : 22 + R(k++) * 30;
           const front = pe + side * (1 + R(k++) * 3);
@@ -853,38 +869,51 @@ export class World {
             const vOff = Math.floor(R(k++) * 16) / 16;
             this.boxBuilding(geo.building, sm, d, base - 0.5, along, depth, h + 0.5, a, uOff, vOff);
             this.shopFront(geo.shop, sm, front - side * 0.12, base, along, side, a, R(k++));
+            // Tokyo dressing: a sign over the shop, vertical signs up the corners
+            const f = this.path.sample(sm, {});
+            f.s = sm;
+            if (R(k++) < 0.7) tk.hsign(f, along, front, side, base + 4.55);
+            const nv = Math.min(3, Math.floor(R(k++) * 3.2));
+            for (let i = 0; i < nv; i++) {
+              const y = base + 5.6 + i * 4.6;
+              if (y + 3 > base + h) break;
+              tk.vsign(f, (i % 2 ? 1 : -1) * (along / 2 - 0.6), front, side, y, 3 + R(k++) * 0.6);
+            }
+            if (R(k++) < 0.25) tk.lanterns(f, along, front, side, base);
             if (h > 30 && R(k++) < 0.5) {
               const p = this.path.point(sm, d, base + h + 1.5);
               glows.push({ x: p.x, y: p.y, z: p.z, r: 1, g: 0.15, b: 0.1, size: 1.4, blink: R(k++) * 6 });
               this.obox(geo.building, sm, d, base + h, 0.4, 0.4, 1.5, a);
             }
           }
-          s += along + (R(k++) < 0.25 ? 8 + R(k++) * 6 : 1.5);
-        } else if (kind === 'house') {
-          // detached houses with gable roofs and small front gardens
-          const along = 9 + R(k++) * 5;
-          const depth = 8 + R(k++) * 4;
-          const floors = R(k++) < 0.6 ? 2 : 1;
-          const h = floors * 3.2;
-          const front = pe + side * (4 + R(k++) * 3);
-          const d = front + side * (depth / 2);
-          const sm = s + along / 2;
-          const base = side > 0 ? Math.max(this.wallH(sm), 0.16) : 0.16;
-          if (R(k++) < 0.85 && clear(s, along, 14)) {
-            const band = Math.floor(R(k++) * 4);
-            this.houseBox(geo.house, sm, d, base, along, depth, h, a, band, floors);
-            this.roof(geo.roof, sm, d, base + h, along + 0.6, depth + 0.6, 2.2 + R(k++) * 1.2, a);
-            if (R(k++) < 0.5) this.tree(geo, sm + along * 0.5 + 1.5, front - side * 2, base, a, R(k++));
-            // little fence along the front garden
-            this.obox(geo.rail, sm, front - side * 2.5, base, along, 0.06, 0.8, a);
+          s += along + (R(k++) < 0.15 ? 4 + R(k++) * 4 : 0.6);
+        } else if (kind === 'town') {
+          if (R(k++) < 0.62) {
+            // a run of narrow shop-houses, wall to wall
+            const n = 2 + Math.floor(R(k++) * 4);
+            const front = pe + side * (0.5 + R(k++) * 0.6);
+            for (let i = 0; i < n; i++) {
+              const along = Math.min(5.5 + R(k++) * 4.5, END - s);
+              if (along < 4) break;
+              const sm = s + along / 2;
+              if (clear(s, along, 12)) tk.shopHouse(sm, along, front, side, baseAt(sm), { shop: R(k++) < 0.35 + 0.5 * dd.town });
+              s += along;
+            }
+            s += 0.8 + R(k++) * 2.5;
+          } else {
+            // a low house behind its block wall
+            const along = Math.min(9 + R(k++) * 4, END - s);
+            if (along < 6) break;
+            const sm = s + along / 2;
+            if (clear(s, along, 12)) tk.house(sm, along, pe + side * 0.3, side, baseAt(sm));
+            s += along + 0.5 + R(k++) * 1.2;
           }
-          s += along + 4 + R(k++) * 6;
         } else {
           // countryside: an occasional farmhouse + red barn far back, otherwise fields
-          if (R(k++) < 0.2 && clear(s, 30, 10)) {
+          if (R(k++) < 0.2 && clear(s, 30, 10) && s + 41 < END) {
             const d = side * (55 + R(k++) * 50);
             const hill = 0.55 + 0.45 * vnoise(s / 260, this.path.seed + 51);
-            const base = side > 0 ? 0.16 + hill * 2.5 : 0.16 + hill * 2.5;
+            const base = 0.16 + hill * 2.5;
             this.houseBox(geo.house, s + 6, d, base, 10, 8, 6.4, a, 0, 2);
             this.roof(geo.roof, s + 6, d, base + 6.4, 10.6, 8.6, 3, a);
             geo.colored.col = '#8c2a22';
@@ -896,18 +925,52 @@ export class World {
           s += 40;
         }
       }
-      // towers behind (downtown) / apartment blocks (suburbs)
-      s = s0 + R(k++) * 10;
-      while (s < s0 + CHUNK) {
+      // ---- pavement furniture: bus stops, benches, planters, bikes, vending machines
+      s = s0 + 2 + R(k++) * 6;
+      while (s < END - 3) {
         const dd = P.district(s);
-        const along = 14 + R(k++) * 18;
+        if (dd.town < 0.45 || !clear(s - 2.5, 5, 4)) {
+          s += 8;
+          continue;
+        }
+        const dIn = side > 0 ? WALL_D + 4.0 : -17.8; // clear of the kerb, lamps and poles
+        const dOut = paveAt(dd) - side * 1.8; // clear of shop fronts and awnings
+        if ((dOut - dIn) * side > 0.7) tk.furniture(s, dIn, dOut, side, baseAt(s), dd.downtown > 0.5);
+        s += (dd.downtown > 0.5 ? 3.5 : 8) + R(k++) * 6;
+      }
+      // ---- rows behind the street in towns: apartments and small offices,
+      // packed so the land between the frontage and the towers is never empty
+      for (const [row, off0, off1] of [[0, 15.5, 17], [1, 34, 38], [2, 31, 32]]) {
+        s = s0 + R(k++) * 3;
+        while (s < END - 5) {
+          const dd = P.district(s + 6);
+          const along = Math.min(8 + R(k++) * 11, END - s);
+          if (along < 5) break;
+          // rows 0, 1: suburbs; row 2: mid-rise blocks behind the downtown frontage
+          const dt = dd.downtown > 0.55;
+          if (dd.town < 0.35 || dt !== (row === 2)) {
+            s += along + 2;
+            continue;
+          }
+          const sm = s + along / 2;
+          const near = paveAt(dd) + side * (off0 + R(k++) * (off1 - off0));
+          const floors = row === 0 ? 2 + Math.floor(R(k++) * 4) : row === 1 ? 4 + Math.floor(R(k++) * 6) : 5 + Math.floor(R(k++) * 7);
+          if (R(k++) < 0.9 && clear(s, along, 14)) tk.backBlock(sm, along, near, side, baseAt(sm), floors, row === 2 || (row === 1 && R(k++) < 0.3));
+          s += along + 0.6 + R(k++) * 2.4;
+        }
+      }
+      // ---- towers behind (downtown) / apartment blocks (suburbs)
+      s = s0 + R(k++) * 10;
+      while (s < END - 10) {
+        const dd = P.district(s);
+        const along = Math.min(14 + R(k++) * 18, END - s);
         const across = 14 + R(k++) * 20;
         const tall = dd.downtown > 0.3;
-        const h = tall ? 28 + R(k++) * 60 : 12 + R(k++) * 12;
+        const h = tall ? 28 + R(k++) * 60 : 14 + R(k++) * 16;
         const gap = 75 + R(k++) * 80;
         const d = side * (gap + across / 2);
         const sm = s + along / 2;
-        const chance = 0.7 * dd.downtown + 0.22 * dd.town * (1 - dd.downtown);
+        const chance = 0.75 * dd.downtown + 0.65 * dd.town * (1 - dd.downtown);
         if (R(k++) < chance && clear(sm - along / 2, along, 20)) {
           const uOff = Math.floor(R(k++) * 16) / 16;
           const vOff = Math.floor(R(k++) * 16) / 16;
@@ -917,8 +980,15 @@ export class World {
             glows.push({ x: p.x, y: p.y, z: p.z, r: 1, g: 0.15, b: 0.1, size: 1.4, blink: R(k++) * 6 });
           }
         }
-        s += along + 6 + R(k++) * 14;
+        s += along + 3 + R(k++) * 8;
       }
+      // ---- concrete utility poles and their wires along the town pavements
+      const lampAt = (s) => {
+        const m = side > 0 ? ((s - 16) % 32 + 32) % 32 : ((s - 24) % 32 + 32) % 32;
+        return m < 2 || m > 30;
+      };
+      const poleOk = (s) => P.district(s).town > 0.4 && clear(s, 0.5, 4) && !lampAt(s);
+      tk.poles(s0, s0 + CHUNK, side > 0 ? WALL_D + 1.75 : -15.75, baseAt, poleOk);
     }
   }
 

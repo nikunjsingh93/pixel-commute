@@ -3,7 +3,7 @@
 // nearest-neighbour sampling (crisp pixels) plus a tiny watermark.
 //   desktop: orbit: drag or A/D + Q/E to circle, W/S or wheel for distance;
 //            free (O): WASD move, Q/E down/up, drag or arrows to look, wheel to zoom;
-//            Enter/Space snap, P filter, T time, R weather, Esc/F exit
+//            Enter/Space snap, G filter, T time, R weather, Esc/P exit
 //   touch  : d-pad + up/down + zoom buttons, drag to look, big snap button
 import * as THREE from 'three';
 import { layer, button, flash } from './ui.js';
@@ -70,7 +70,7 @@ export class PhotoMode {
     const tb = (label, i, fn) =>
       button(L, 'pill small', label, { width: `calc(${P} + 22px)`, height: P, top, right: `calc(${br} + ${i} * (${P} + 30px))` }, fn);
     tb('Exit', 0, () => this.g.press('Escape'));
-    this.filterBtn = tb('Filter', 1, () => this.g.press('KeyP'));
+    this.filterBtn = tb('Filter', 1, () => this.g.press('KeyG'));
     tb('Time', 2, () => this.g.press('KeyT'));
     tb('Weather', 3, () => this.g.press('KeyR'));
     this.carBtn = tb('Car', 4, () => {
@@ -111,8 +111,8 @@ export class PhotoMode {
 
   updateHint() {
     this.hint.innerHTML = this.orbit
-      ? 'PHOTO MODE &middot; ORBIT<br>DRAG OR A / D CIRCLE THE CAR &middot; Q / E HEIGHT<br>WHEEL OR W / S DISTANCE &middot; + / - ZOOM<br>O FREE CAMERA &middot; ENTER SNAP &middot; P FILTER &middot; ESC EXIT'
-      : 'PHOTO MODE &middot; FREE<br>WASD MOVE &middot; Q / E DOWN / UP &middot; SHIFT FAST<br>DRAG OR ARROWS LOOK &middot; WHEEL ZOOM<br>O ORBIT &middot; ENTER SNAP &middot; P FILTER &middot; ESC EXIT';
+      ? 'PHOTO MODE &middot; ORBIT<br>DRAG OR A / D CIRCLE THE CAR &middot; Q / E HEIGHT<br>WHEEL OR W / S DISTANCE &middot; + / - ZOOM<br>O FREE CAMERA &middot; ENTER SNAP &middot; G FILTER &middot; P / ESC EXIT'
+      : 'PHOTO MODE &middot; FREE<br>WASD MOVE &middot; Q / E DOWN / UP &middot; SHIFT FAST<br>DRAG OR ARROWS LOOK &middot; WHEEL ZOOM<br>O ORBIT &middot; ENTER SNAP &middot; G FILTER &middot; P / ESC EXIT';
     this.orbitBtn.innerHTML = this.orbit ? 'Orbit' : 'Free';
     this.orbitBtn.classList.toggle('act', this.orbit);
   }

@@ -45,6 +45,8 @@ scene.fog = new THREE.FogExp2(0x7a92b4, 0.0034);
 const camera = new THREE.PerspectiveCamera(52, 16 / 9, 0.3, 1500);
 
 const pipe = new PixelPipeline(renderer);
+// colour filter: 2 = raw (default), 0 = 8-bit palette, 1 = posterize
+pipe.post.uniforms.mode.value = Number(params.get('pal') ?? loadPref('palette') ?? 2);
 const path = new Path(Number(params.get('seed') || 7));
 const planner = new Planner(Number(params.get('seed') || 7));
 const world = new World(scene, path, planner);
@@ -92,7 +94,7 @@ const WEATHERS = [
   { name: 'CLEAR', kind: 'none', amount: 0, wet: 0.2, snow: 0, overcast: 0, fog: 0.8 },
   { name: 'FOG', kind: 'none', amount: 0, wet: 0.45, snow: 0, overcast: 0.7, fog: 3.2 },
 ];
-const CAMS = ['RALLY', 'FAR', 'COCKPIT', 'BUMPER'];
+const CAMS = ['TOP', 'FAR', 'COCKPIT', 'BUMPER'];
 // time-of-day presets the T key / Time button steps through
 const TIME_STOPS = [6.3, 10, 16.5, 18.4, 19.2, 20.5, 23];
 
@@ -113,7 +115,7 @@ const camState = {
   look: new THREE.Vector3(), init: false, shakeT: 0,
   // mouse look: orbit the car (chase / far) or turn the head (cockpit / bumper)
   yaw: 0, pitch: 0, idle: 9,
-  low: 0, // rally camera: 0 = high above the road, 1 = dropped low (tunnels)
+  low: 0, // top camera: 0 = high above the road, 1 = dropped low (tunnels)
   dir: new THREE.Vector3(0, 0, 1), off: new THREE.Vector3(), lookOff: new THREE.Vector3(),
 };
 
@@ -187,9 +189,9 @@ function action(k) {
   if (photo.active) {
     // photo mode: only snap / exit / look tweaks; movement keys are read every frame
     if (k === 'Enter' || k === 'Space') photo.snap();
-    else if (k === 'Escape' || k === 'KeyF') exitPhoto();
+    else if (k === 'Escape' || k === 'KeyP') exitPhoto();
     else if (k === 'KeyO') photo.toggleOrbit();
-    else if (['KeyT', 'KeyR', 'KeyP', 'BracketLeft', 'BracketRight'].includes(k)) runAction(k);
+    else if (['KeyT', 'KeyR', 'KeyG', 'BracketLeft', 'BracketRight'].includes(k)) runAction(k);
     return;
   }
   if (st.mode === 'title') {
@@ -219,7 +221,7 @@ function exitPhoto() {
 function runAction(k) {
   startAudio();
   switch (k) {
-    case 'KeyF':
+    case 'KeyP':
       enterPhoto();
       break;
     case 'KeyO':
@@ -264,8 +266,10 @@ function runAction(k) {
       radio.next();
       hud.say(radio.label());
       break;
-    case 'KeyP':
+    case 'KeyG':
+      // colour filter: raw (default) -> 8-bit palette -> posterize
       pipe.post.uniforms.mode.value = (pipe.post.uniforms.mode.value + 1) % 3;
+      savePref('palette', pipe.post.uniforms.mode.value);
       hud.say(['PALETTE: 8-BIT', 'PALETTE: POSTERIZE', 'PALETTE: OFF (RAW)'][pipe.post.uniforms.mode.value]);
       break;
     case 'BracketLeft':
@@ -619,18 +623,18 @@ function updateCamera(dt, car) {
   let fov = 52;
   let near = 0.3;
   const carPos = _v3.set(car.x, car.y + V.spec.comH, car.z);
-  if (mode === 'RALLY' || mode === 'FAR') {
-    const rally = mode === 'RALLY';
+  if (mode === 'TOP' || mode === 'FAR') {
+    const top = mode === 'TOP';
     // camera direction: between the car's nose and its velocity
     const fwdH = _v1.set(V.fwd.x, 0, V.fwd.z).normalize();
     const velH = _v2.set(V.vel.x, 0, V.vel.z);
-    if (velH.length() > 4 && V.fwdSpeed > 0) fwdH.lerp(velH.normalize(), rally ? 0.45 : 0.55).normalize();
+    if (velH.length() > 4 && V.fwdSpeed > 0) fwdH.lerp(velH.normalize(), top ? 0.45 : 0.55).normalize();
     if (!camState.init) camState.dir.copy(fwdH);
-    camState.dir.lerp(fwdH, 1 - Math.exp(-dt * (rally ? 2.2 : 3.2))).normalize();
+    camState.dir.lerp(fwdH, 1 - Math.exp(-dt * (top ? 2.2 : 3.2))).normalize();
     const big = Math.sqrt(player.L / 5.2) * (0.85 + 0.15 * (player.dims.H / 1.64));
     let dist = 11.5 * big, height = 3.5 * big, lookH = 0.9, ahead = 5.5;
-    if (rally) {
-      // "art of rally": high and far back with a narrow lens, looking well
+    if (top) {
+      // top ("art of rally" style): high and far back with a narrow lens, looking well
       // ahead so the car sits in the lower third. Tunnels and overpasses
       // pull it down low, so it never looks through a roof or a bridge deck.
       let low = 0;
@@ -665,9 +669,9 @@ function updateCamera(dt, car) {
     camera.position.copy(carPos).add(camState.off);
     camera.up.copy(_up);
     camera.lookAt(_v1.copy(carPos).add(camState.lookOff));
-    camera.rotateZ(sx * 0.0016 * (rally ? 0.4 : 1));
-    camera.rotateX(sy * 0.0012 * (rally ? 0.4 : 1));
-    fov = rally ? 45 + Math.min(Math.abs(player.v) * 0.05, 4) : 48 + Math.min(Math.abs(player.v) * 0.14, 7);
+    camera.rotateZ(sx * 0.0016 * (top ? 0.4 : 1));
+    camera.rotateX(sy * 0.0012 * (top ? 0.4 : 1));
+    fov = top ? 45 + Math.min(Math.abs(player.v) * 0.05, 4) : 48 + Math.min(Math.abs(player.v) * 0.14, 7);
     camState.init = true;
   } else if (mode === 'COCKPIT' || mode === 'BUMPER') {
     const inside = mode === 'COCKPIT';

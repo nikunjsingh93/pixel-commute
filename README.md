@@ -27,15 +27,15 @@ npm run deploy     # build + publish to the gh-pages branch (GitHub Pages)
 | `A` `D` / `←` `→` | steer |
 | `Space` / `Shift` | handbrake |
 | `O` | autopilot: keeps a lane, follows traffic, overtakes slow cars |
-| `C` | camera: rally (high, art-of-rally style), far (default), cockpit, bumper |
+| `C` | camera: top (high, art-of-rally style), far (default), cockpit, bumper |
 | mouse | look around: orbits the car in chase / far, turns your head in the cockpit; swings back after a moment |
 | `T` | next time of day: dawn, day, afternoon, sunset, blue hour, evening, night |
 | `R` | weather: snow, rain, clear, fog |
 | `M` / `N` | radio on/off, next station |
 | `J` | jobs board (switches to commute mode) |
-| `F` | photo mode |
+| `P` | photo mode |
 | `[` `]` | pixel size (render resolution) |
-| `P` | palette mode: 8-bit palette, posterize, raw |
+| `G` | palette: raw (default), 8-bit palette, posterize |
 | `Esc` | pause, with the full list of controls |
 | `U` / `H` | hide HUD / quick help |
 
@@ -117,7 +117,7 @@ it was.
 * **Radio**: four generative stations (PIXEL FM lo-fi, NIGHT DRIVE synthwave, SMOOTH AM jazz,
   CHILL ambient), each with its own jingle. **MY MUSIC** plays your own audio files, which are
   kept in the browser (IndexedDB).
-* **Photo mode** (`F`): the world freezes and the camera orbits the car. Drag or use A/D to
+* **Photo mode** (`P`): the world freezes and the camera orbits the car. Drag or use A/D to
   circle it (front, sides, top), and the wheel or W/S to change the distance. `O` (or the
   Orbit button) switches to a free camera that flies within 70 m (WASD/QE, drag to look). You
   can change the time, weather and filter, and hide the car. Snap saves a crisp upscaled PNG, or opens the share sheet on phones.
@@ -153,6 +153,7 @@ src/
   features.js  tunnel, harbour bridge, roadworks and toll plaza geometry
   exits.js     an exit's road network: ramps, city loop, junctions, petrol station, local traffic
   goals.js     commute mode: jobs, fuel, tolls, milestones, the jobs panel
+  tokyo.js     Tokyo-style street detail: shop-houses, signs, poles + wires, pavement furniture
   garage.js    the four player cars, paints, plate and the garage panel
   radio.js     stations, jingles, your own music files
   photo.js     photo mode camera + snapshot
