@@ -298,10 +298,10 @@ export class Vehicle {
         const back = -fy * wl.dot(fwd);
         if (back < 0) totalF.addScaledVector(fwd, -back * 0.75 * this.throttle * (1 - smoothstep(7, 18, this.speed)));
       }
-      // tyre forces act as if from a point 65% of the way up to the centre of
+      // tyre forces act as if from a point 30% of the way up to the centre of
       // mass: the grip stays, but the roll (and dive) they cause is much
       // smaller, so a hard turn leans the car instead of tipping it over
-      this._tv2.copy(r).addScaledVector(up, -0.65 * r.dot(up));
+      this._tv2.copy(r).addScaledVector(up, -0.3 * r.dot(up));
       torque.add(this._tv2.cross(tv));
     }
     // aerodynamics
@@ -317,7 +317,7 @@ export class Vehicle {
       const mk = S.mass / 1780;
       const rollErr = this._tv2.copy(up).cross(Y_UP).dot(fwd); // ~ sin(roll)
       const rollRate = this.omega.dot(fwd);
-      torque.addScaledVector(fwd, (rollErr * 14000 - rollRate * 2600) * mk);
+      torque.addScaledVector(fwd, (rollErr * 5200 - rollRate * 1300) * mk);
     }
     if (this.assist > 0 && this.speed > 4 && this.onGround > 2) {
       // yaw stability assist toward the kinematic (bicycle model) yaw rate
