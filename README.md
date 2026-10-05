@@ -27,7 +27,7 @@ npm run deploy     # build + publish to the gh-pages branch (GitHub Pages)
 | `A` `D` / `←` `→` | steer |
 | `Space` / `Shift` | handbrake |
 | `O` | autopilot: keeps a lane, follows traffic, overtakes slow cars |
-| `C` | camera: chase, far (default), cockpit, bumper |
+| `C` | camera: rally (high, art-of-rally style), far (default), cockpit, bumper |
 | mouse | look around: orbits the car in chase / far, turns your head in the cockpit; swings back after a moment |
 | `T` | next time of day: dawn, day, afternoon, sunset, blue hour, evening, night |
 | `R` | weather: snow, rain, clear, fog |

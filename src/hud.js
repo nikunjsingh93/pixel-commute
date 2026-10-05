@@ -212,7 +212,7 @@ export class Hud {
     }
     return [
       ['W / ↑', 'ACCELERATE'], ['S / ↓', 'BRAKE / HOLD TO REVERSE'], ['A D / < >', 'STEER'], ['SPACE', 'HANDBRAKE'],
-      ['O', 'AUTOPILOT ON / OFF'], ['C', 'CAMERA: CHASE FAR COCKPIT BUMPER'], ['MOUSE', 'LOOK AROUND THE CAR'],
+      ['O', 'AUTOPILOT ON / OFF'], ['C', 'CAMERA: RALLY FAR COCKPIT BUMPER'], ['MOUSE', 'LOOK AROUND THE CAR'],
       ['T', 'TIME OF DAY'], ['R', 'WEATHER'], ['M  /  N', 'RADIO / NEXT STATION'], ['[  ]', 'PIXEL RESOLUTION'],
       ['P', 'PALETTE MODE'], ['F', 'PHOTO MODE'], ['J', 'JOBS (COMMUTE MODE)'], ['U', 'HIDE HUD'], ['ESC', 'PAUSE + MENU'],
       ['PAD', 'STICK STEER  RT GAS  LT BRAKE'],

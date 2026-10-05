@@ -664,6 +664,7 @@ export class World {
     }
 
     // the city / suburbs / farms beside the road
+    c.bridgeS = bridgeS;
     this.buildBlocks(c, ci, isLand, bridgeS);
 
     // planner features
@@ -783,7 +784,7 @@ export class World {
     group.position.set(anchor.x - this.origin.x, anchor.y - this.origin.y, anchor.z - this.origin.z);
     this.root.add(group);
     return {
-      group, anchor, glows: c.glows, lights: c.lights, s0: c.s0, obstacles: c.obstacles, cones: c.cones, coneMesh, arms: c.arms, ci,
+      group, anchor, glows: c.glows, lights: c.lights, s0: c.s0, obstacles: c.obstacles, cones: c.cones, coneMesh, arms: c.arms, ci, bridgeS: c.bridgeS,
     };
   }
 
@@ -982,5 +983,11 @@ export class World {
   }
   *allChunks() {
     yield* this.chunks.values();
+  }
+
+  // is there an overpass crossing the road between a and b (along s)?
+  overpassIn(a, b) {
+    for (const c of this.chunks.values()) if (c.bridgeS != null && c.bridgeS > a && c.bridgeS < b) return true;
+    return false;
   }
 }

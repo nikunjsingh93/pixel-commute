@@ -92,7 +92,7 @@ const WEATHERS = [
   { name: 'CLEAR', kind: 'none', amount: 0, wet: 0.2, snow: 0, overcast: 0, fog: 0.8 },
   { name: 'FOG', kind: 'none', amount: 0, wet: 0.45, snow: 0, overcast: 0.7, fog: 3.2 },
 ];
-const CAMS = ['CHASE', 'FAR', 'COCKPIT', 'BUMPER'];
+const CAMS = ['RALLY', 'FAR', 'COCKPIT', 'BUMPER'];
 // time-of-day presets the T key / Time button steps through
 const TIME_STOPS = [6.3, 10, 16.5, 18.4, 19.2, 20.5, 23];
 
@@ -113,6 +113,7 @@ const camState = {
   look: new THREE.Vector3(), init: false, shakeT: 0,
   // mouse look: orbit the car (chase / far) or turn the head (cockpit / bumper)
   yaw: 0, pitch: 0, idle: 9,
+  low: 0, // rally camera: 0 = high above the road, 1 = dropped low (tunnels)
   dir: new THREE.Vector3(0, 0, 1), off: new THREE.Vector3(), lookOff: new THREE.Vector3(),
 };
 
@@ -618,21 +619,35 @@ function updateCamera(dt, car) {
   let fov = 52;
   let near = 0.3;
   const carPos = _v3.set(car.x, car.y + V.spec.comH, car.z);
-  if (mode === 'CHASE' || mode === 'FAR') {
+  if (mode === 'RALLY' || mode === 'FAR') {
+    const rally = mode === 'RALLY';
     // camera direction: between the car's nose and its velocity
     const fwdH = _v1.set(V.fwd.x, 0, V.fwd.z).normalize();
     const velH = _v2.set(V.vel.x, 0, V.vel.z);
-    if (velH.length() > 4 && V.fwdSpeed > 0) fwdH.lerp(velH.normalize(), 0.55).normalize();
+    if (velH.length() > 4 && V.fwdSpeed > 0) fwdH.lerp(velH.normalize(), rally ? 0.45 : 0.55).normalize();
     if (!camState.init) camState.dir.copy(fwdH);
-    camState.dir.lerp(fwdH, 1 - Math.exp(-dt * 3.2)).normalize();
-    const far = mode === 'FAR';
+    camState.dir.lerp(fwdH, 1 - Math.exp(-dt * (rally ? 2.2 : 3.2))).normalize();
     const big = Math.sqrt(player.L / 5.2) * (0.85 + 0.15 * (player.dims.H / 1.64));
-    const dist = (far ? 11.5 : 6.6) * big, height = (far ? 3.5 : 1.95) * big, lookH = far ? 0.9 : 1.15;
+    let dist = 11.5 * big, height = 3.5 * big, lookH = 0.9, ahead = 5.5;
+    if (rally) {
+      // "art of rally": high and far back with a narrow lens, looking well
+      // ahead so the car sits in the lower third. Tunnels and overpasses
+      // pull it down low, so it never looks through a roof or a bridge deck.
+      let low = 0;
+      for (const ds of [-30, -15, 0, 12]) if (planner.at(player.s + ds, 'tunnel', 25) || planner.at(player.s + ds, 'toll', 25)) low = 1;
+      if (world.overpassIn(player.s - 28, player.s + 15 + Math.abs(player.v) * 1.4)) low = 1;
+      camState.low += (low - camState.low) * (1 - Math.exp(-dt * 2.5));
+      const k = camState.low;
+      dist = (20 - 9 * k) * big;
+      height = (12 - 7.6 * k) * big;
+      lookH = 0;
+      ahead = 11.5 + Math.min(Math.abs(player.v) * 0.18, 8);
+    }
     const dir = _v4.copy(camState.dir).applyAxisAngle(_up, camState.yaw);
     const cp = Math.cos(camState.pitch), spitch = Math.sin(camState.pitch);
     const offT = _v1.copy(dir).multiplyScalar(-dist * cp);
     offT.y = -V.spec.comH + height + dist * spitch;
-    const lookT = _v2.copy(dir).multiplyScalar(5.5 * cp);
+    const lookT = _v2.copy(dir).multiplyScalar(ahead * cp);
     lookT.y = -V.spec.comH + lookH;
     if (!camState.init) {
       camState.off.copy(offT);
@@ -650,9 +665,9 @@ function updateCamera(dt, car) {
     camera.position.copy(carPos).add(camState.off);
     camera.up.copy(_up);
     camera.lookAt(_v1.copy(carPos).add(camState.lookOff));
-    camera.rotateZ(sx * 0.0016);
-    camera.rotateX(sy * 0.0012);
-    fov = (far ? 48 : 54) + Math.min(Math.abs(player.v) * 0.14, 7);
+    camera.rotateZ(sx * 0.0016 * (rally ? 0.4 : 1));
+    camera.rotateX(sy * 0.0012 * (rally ? 0.4 : 1));
+    fov = rally ? 45 + Math.min(Math.abs(player.v) * 0.05, 4) : 48 + Math.min(Math.abs(player.v) * 0.14, 7);
     camState.init = true;
   } else if (mode === 'COCKPIT' || mode === 'BUMPER') {
     const inside = mode === 'COCKPIT';
