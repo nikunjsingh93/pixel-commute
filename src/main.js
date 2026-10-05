@@ -576,18 +576,36 @@ function maybeRebase() {
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 const _v4 = new THREE.Vector3();
-window.addEventListener('mousemove', (e) => {
-  if (st.mode !== 'drive' || st.paused || photo.active || anyPanelOpen() || garage.isOpen) return;
-  if (!e.movementX && !e.movementY) return;
+const lookAllowed = () => st.mode === 'drive' && !st.paused && !photo.active && !anyPanelOpen() && !garage.isOpen;
+function lookBy(mx, my) {
   const inside = CAMS[st.cam] === 'COCKPIT' || CAMS[st.cam] === 'BUMPER';
-  camState.yaw -= e.movementX * 0.006;
+  camState.yaw -= mx * 0.006;
   if (inside) camState.yaw = Math.max(-1.9, Math.min(1.9, camState.yaw));
   else camState.yaw = Math.atan2(Math.sin(camState.yaw), Math.cos(camState.yaw));
-  camState.pitch = Math.max(-0.2, Math.min(0.85, camState.pitch + e.movementY * 0.004));
+  camState.pitch = Math.max(-0.2, Math.min(0.85, camState.pitch + my * 0.004));
   camState.idle = 0;
+}
+window.addEventListener('mousemove', (e) => {
+  if (!lookAllowed() || (!e.movementX && !e.movementY)) return;
+  lookBy(e.movementX, e.movementY);
 });
+// touch screens: swipe on the picture (not on a button) to look around
+const swipes = new Map();
+window.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' || !lookAllowed()) return;
+  if (e.target.closest && e.target.closest('.pb, .ui-panel, .ui-menu')) return;
+  swipes.set(e.pointerId, { x: e.clientX, y: e.clientY });
+});
+window.addEventListener('pointermove', (e) => {
+  const p = swipes.get(e.pointerId);
+  if (!p) return;
+  if (lookAllowed()) lookBy((e.clientX - p.x) * 0.9, (e.clientY - p.y) * 0.9);
+  p.x = e.clientX;
+  p.y = e.clientY;
+});
+for (const ev of ['pointerup', 'pointercancel']) window.addEventListener(ev, (e) => swipes.delete(e.pointerId));
 function easeMouseLook(dt) {
-  camState.idle += dt;
+  camState.idle = swipes.size ? 0 : camState.idle + dt; // a finger still down holds the view
   // after 1.5 s without mouse movement the view swings back behind the car
   if (camState.idle > 1.5) {
     const k = 1 - Math.exp(-dt * 2.5);
