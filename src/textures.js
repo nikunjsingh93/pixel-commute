@@ -285,6 +285,33 @@ export function billboardTexture(lines, bg, fg, font) {
   return t;
 }
 
+// City street / ramp asphalt: u across (0..1), v along (one tile = 8 m).
+// White edge lines; two-way streets get a double yellow centre line.
+export function streetTexture(twoWay) {
+  const W = 64, H = 64;
+  const [c, g] = canvas(W, H);
+  g.fillStyle = '#45474d';
+  g.fillRect(0, 0, W, H);
+  for (let i = 0; i < W * H * 0.25; i++) {
+    const v = rnd();
+    g.fillStyle = v < 0.5 ? '#3f4147' : v < 0.85 ? '#4c4e54' : '#56585d';
+    g.fillRect((rnd() * W) | 0, (rnd() * H) | 0, 1, 1);
+  }
+  for (let i = 0; i < 4; i++) {
+    g.fillStyle = 'rgba(20,20,26,0.3)';
+    g.fillRect(rnd() * W, rnd() * H, 3 + rnd() * 8, 3 + rnd() * 10);
+  }
+  g.fillStyle = '#d8d4c8';
+  g.fillRect(2, 0, 1, H);
+  g.fillRect(W - 3, 0, 1, H);
+  if (twoWay) {
+    g.fillStyle = '#d9b53f';
+    g.fillRect(W / 2 - 2, 0, 1, H);
+    g.fillRect(W / 2 + 1, 0, 1, H);
+  }
+  return tex(c);
+}
+
 // Tunnel wall tiles: cream ceramic grid with a dark kick strip at the bottom
 export function tileTexture() {
   const W = 64, H = 64;

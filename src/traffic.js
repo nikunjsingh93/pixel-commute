@@ -162,7 +162,7 @@ export class Traffic {
         if (rnd() < 0.5) opts.reverse();
         for (const l of opts) {
           if ((c.type === 'truck' || c.type === 'bus') && l === 0) continue;
-          if (PL && PL.laneClosed(c.s + 60, l)) continue;
+          if (PL && (PL.laneClosed(c.s, l) || PL.laneClosed(c.s + 60, l))) continue;
           const ld = LANE_D[l];
           const fwd = this.leader(c, ld, this.cars, player);
           const back = this.follower(c, ld, this.cars, player);
@@ -186,7 +186,7 @@ export class Traffic {
       }
       if (Math.abs(ddiff) < 0.05) c.lane = c.target;
       c.blink = Math.max(0, c.blink - dt);
-      c.yaw = Math.atan2(c.blink > 1.6 ? 0 : latV, Math.max(c.v, 3));
+      c.yaw = -Math.atan2(c.blink > 1.6 ? 0 : latV, Math.max(c.v, 3));
 
       c.acc = a;
       c.v = Math.max(0, c.v + a * dt);

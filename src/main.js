@@ -58,6 +58,7 @@ const player = new Player(world.root, path, carSel);
 traffic.planner = planner;
 player.planner = planner;
 player.world = world;
+player.groundP.world = world;
 const weather = new Weather(scene);
 const hud = new Hud(hudCanvas);
 const audio = new Audio();
@@ -725,6 +726,7 @@ function step(dt) {
     const inp = st.mode === 'title' ? { throttle: 0, brake: 0, steer: 0, any: false } : input;
     player.update(dt, inp, traffic);
     traffic.update(dt, player);
+    for (const net of world.nets.values()) net.update(dt, player);
     for (const e of player.events) {
       if (e.type === 'close') {
         hud.popup(e.combo > 1 ? `CLOSE CALL X${e.combo}` : 'CLOSE CALL', '#ffcd6e');
@@ -815,6 +817,7 @@ function render(dt) {
   lamps.assign(lampCands, focus, 55);
 
   traffic.render(world.origin, glows, wet, Math.max(0.35, night), st.time, streak);
+  for (const net of world.nets.values()) net.render(world.origin, glows, Math.max(0.35, night), st.time);
   // the showroom keeps the cars around the player out of shot
   for (const tc of traffic.cars) tc.mesh.scale.setScalar(garage.isOpen && Math.abs(tc.s - player.s) < 25 ? 0 : 1);
   // nearest traffic tail lights get real red lights (wet-road shine)

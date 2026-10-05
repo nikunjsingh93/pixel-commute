@@ -42,7 +42,10 @@ class RoadGround {
     const p = this.project(x, z, this.g);
     let h = p.y;
     let surf = 0;
-    if (p.d > ROAD_R) {
+    const net = this.world && p.d > ROAD_R ? this.world.netAt(p.s) : null;
+    if (net && net.contains(p.s, p.d)) {
+      // on an exit ramp / city street: flat road
+    } else if (p.d > ROAD_R) {
       h += Math.min(1, (p.d - ROAD_R) / 0.08) * 0.16; // curb up onto the verge
       surf = 1;
     }
@@ -190,7 +193,9 @@ export class Player {
     this.brake += (tb - this.brake) * Math.min(1, dt * 12);
 
     // never get stuck: flipped, or somehow outside the walls
-    const lost = V.up.y < 0.35 || this.d < ROAD_L - 3 || this.d > WALL_D + 2;
+    const net = this.world ? this.world.netAt(this.s) : null;
+    const offRoad = this.d > WALL_D + 2 && !(net && (net.contains(this.s, this.d) || net.pushOut(this.s, this.d).pen < 6));
+    const lost = V.up.y < 0.35 || this.d < ROAD_L - 3 || offRoad;
     this.stuck = lost ? this.stuck + dt : 0;
     if (this.stuck > 2.5) {
       this.stuck = 0;
@@ -216,15 +221,26 @@ export class Player {
   barriers() {
     const V = this.veh, P = this._p, n = this._n, vp = this._vp, t = this._t;
     const minD = ROAD_L - 0.04; // median barrier face
-    const maxD = GUARD_R - 0.04; // guard rail (the wall, where there is one, sits behind it)
+    const guard = GUARD_R - 0.04; // guard rail (the wall, where there is one, sits behind it)
     for (let i = 0; i < 4; i++) {
       this.corner(i, P);
       const q = this.groundP.project(P.x, P.z, this._cq);
-      let pen = 0, side = 0;
-      if (q.d < minD) { pen = minD - q.d; side = -1; }
-      else if (q.d > maxD) { pen = q.d - maxD; side = 1; }
+      let pen = 0, side = 0, ds = 0, dd = 0;
+      const net = this.world ? this.world.netAt(q.s) : null;
+      const maxD = net ? net.hwMax(q.s, guard) : guard;
+      if (q.d < minD) { pen = minD - q.d; side = -1; dd = 1; }
+      else if (q.d > maxD && !(net && net.contains(q.s, q.d))) {
+        // outside every drivable piece: back toward the highway or the nearest street
+        pen = q.d - maxD; dd = -1;
+        if (net) {
+          const po = net.pushOut(q.s, q.d);
+          if (po.pen < pen) { pen = po.pen; ds = po.ds; dd = po.dd; }
+        }
+        side = 1;
+      }
       if (!side) continue;
-      n.set(-side * q.rx, 0, -side * q.rz); // back toward the road
+      pen = Math.min(pen, 0.5);
+      n.set(q.fx * ds + q.rx * dd, 0, q.fz * ds + q.rz * dd).normalize();
       V.pos.addScaledVector(n, pen);
       V.pointVel(P, vp);
       const vn = vp.dot(n);
@@ -286,6 +302,13 @@ export class Player {
       if (Math.abs(ob.s - this.s) > ob.L / 2 + 6 || Math.abs(ob.d - this.d) > ob.W / 2 + 4) continue;
       const worst = this.collideBox(ob, 1e12, false);
       if (worst > 0.6) this.hit(worst / 9, 'wall');
+    }
+    for (const net of W.nets.values()) {
+      for (const c of net.cars) {
+        if (Math.abs(c.s - this.s) > 12 || Math.abs(c.d - this.d) > 12) continue;
+        const worst = this.collideBox(c, 1500, false);
+        if (worst > 0.6) this.hit(worst / 9, 'car');
+      }
     }
     for (const ch of W.allChunks()) {
       if (!ch.cones.length || ch.s0 > this.s + 40 || ch.s0 + 64 < this.s - 40) continue;
@@ -378,7 +401,8 @@ export class Player {
     const V = this.veh;
     const PL = this.planner;
     const cruise = PL && PL.at(this.s + 90, 'toll', 60) ? 12 : 27;
-    if (PL && PL.laneClosed(this.s + 150, this.autoLane)) this.autoLane = Math.max(0, this.autoLane - 1);
+    const closed = (l) => PL && (PL.laneClosed(this.s, l) || PL.laneClosed(this.s + 150, l));
+    if (closed(this.autoLane)) this.autoLane = Math.max(0, this.autoLane - 1);
     const laneD = LANE_D[this.autoLane];
     const lead = traffic.leader(this, laneD, traffic.cars, null);
     const vLead = lead.o ? lead.o.v : cruise;
@@ -393,7 +417,7 @@ export class Player {
       this.autoCool = 4;
       for (const l of [this.autoLane - 1, this.autoLane + 1]) {
         if (l < 0 || l > 3) continue;
-        if (PL && (PL.laneClosed(this.s + 150, l) || PL.noLaneChange(this.s + 60))) continue;
+        if (closed(l) || (PL && PL.noLaneChange(this.s + 60))) continue;
         const f = traffic.leader(this, LANE_D[l], traffic.cars, null);
         const b = traffic.follower(this, LANE_D[l], traffic.cars, null);
         if (f.gap > lead.gap + 15 && b.gap > 14) {

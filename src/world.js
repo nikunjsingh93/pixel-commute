@@ -8,6 +8,7 @@ import { hash, vnoise } from './path.js';
 import * as T from './textures.js';
 import { font } from './font.js';
 import { buildTunnel, buildHarbor, buildWorks, buildToll } from './features.js';
+import { ExitNet } from './exits.js';
 
 export const CHUNK = 64;
 const DS = 4; // geometry step along the road
@@ -26,7 +27,7 @@ const UPPER_Y = 6.6; // ground level above the right wall
 const LAMP_EVERY = 36;
 const WALL_LAMP_EVERY = 28;
 
-class GeoB {
+export class GeoB {
   constructor() {
     this.pos = [];
     this.uv = [];
@@ -125,6 +126,7 @@ export class World {
     this.snow = 0;
     this.wet = 1;
     this.coneGeo = coneGeometry();
+    this.nets = new Map(); // exit networks by feature id
     this.makeMaterials();
   }
 
@@ -195,6 +197,25 @@ export class World {
     this.mTollSign = sign(['TOLL PLAZA', '$2  KEEP LANE'], '#1f6a4a', '#e8e8e0');
     this.mTollCanopy = new THREE.MeshBasicMaterial({ map: T.roadSignTexture(['TOLL'], '#1f6a4a', '#e8e8e0', font), color: new THREE.Color(1.3, 1.3, 1.3) });
     this.mArrow = new THREE.MeshBasicMaterial({ map: T.arrowBoardTexture(), color: new THREE.Color(1.8, 1.8, 1.8) });
+    const street = T.streetTexture(true), ramp = T.streetTexture(false);
+    this.mStreet = new THREE.MeshStandardMaterial({ map: street, roughness: 0.6, roughnessMap: puddles, envMapIntensity: 0.35 });
+    this.mRamp = new THREE.MeshStandardMaterial({ map: ramp, roughness: 0.6, roughnessMap: puddles, envMapIntensity: 0.35 });
+    this.mCanopy = new THREE.MeshLambertMaterial({ color: '#e8e4da' });
+    this.exitSignMats = new Map();
+  }
+
+  // green exit sign faces, cached per exit and wording
+  exitSign(key, lines) {
+    if (!this.exitSignMats.has(key)) {
+      this.exitSignMats.set(key, new THREE.MeshLambertMaterial({ map: T.signTexture(lines, font), emissive: '#203a30', emissiveIntensity: 0.5 }));
+    }
+    return this.exitSignMats.get(key);
+  }
+
+  // the exit network covering s (if any)
+  netAt(s) {
+    for (const n of this.nets.values()) if (s >= n.s0 && s <= n.s1) return n;
+    return null;
   }
 
   setWeather(snow, wet) {
@@ -202,6 +223,7 @@ export class World {
     this.wet = wet;
     const rough = 0.92 - wet * 0.6;
     this.mRoad.roughness = this.mOpp.roughness = rough;
+    this.mStreet.roughness = this.mRamp.roughness = rough;
     // snow cover: tint the (dark) ground textures towards white
     const k = 1 + snow * 2.6;
     this.mGround.color.setRGB(k, k * 1.02, k * 1.08);
@@ -315,6 +337,25 @@ export class World {
         this.chunks.delete(i);
       }
     }
+    // exit networks: built as they come into view, dropped once passed
+    for (const f of this.planner.range(camS - 300, camS + 900, 'exit')) {
+      if (!this.nets.has(f.id)) {
+        const net = new ExitNet(this, f);
+        net.build(this.root, {
+          ground: this.mGround, pave: this.mPave, street: this.mStreet, ramp: this.mRamp, concrete: this.mConcrete,
+          rail: this.mRail, dark: this.mDark, metal: this.mMetal, lamp: this.mLamp, building: this.mBuilding, shop: this.mShop,
+          colored: this.mColored, leaf: this.mLeaf, canopy: this.mCanopy,
+        }, GeoB);
+        this.nets.set(f.id, net);
+        if (!all) return; // one heavy build per frame
+      }
+    }
+    for (const [id, net] of this.nets) {
+      if (net.s1 < camS - 300 || net.s0 > camS + 1000) {
+        net.dispose(this.root);
+        this.nets.delete(id);
+      }
+    }
     // build at most one chunk per frame (everything when asked) to avoid hitches
     let built = 0;
     for (let i = i0; i <= i1; i++) {
@@ -332,6 +373,7 @@ export class World {
     for (const ch of this.chunks.values()) {
       ch.group.position.set(ch.anchor.x - this.origin.x, ch.anchor.y - this.origin.y, ch.anchor.z - this.origin.z);
     }
+    for (const n of this.nets.values()) n.rebase(this.origin);
   }
 
   // height of the right-hand retaining wall at s: mostly 0 (open city with a
@@ -449,6 +491,26 @@ export class World {
       }
       land = next;
     }
+    // the right-hand roadside of an exit zone is built by its ExitNet
+    const exits = feats.filter((f) => f.type === 'exit');
+    const inExit = (s) => exits.some((f) => s >= f.s0 - 6 && s <= f.s1 + 6);
+    const cutR = (ranges) => {
+      let out = ranges;
+      for (const f of exits) {
+        const next = [];
+        for (const [x0, x1] of out) {
+          const e0 = f.s0 - 6, e1 = f.s1 + 6;
+          if (e1 <= x0 || e0 >= x1) next.push([x0, x1]);
+          else {
+            if (e0 > x0) next.push([x0, e0]);
+            if (e1 < x1) next.push([e1, x1]);
+          }
+        }
+        out = next;
+      }
+      return out;
+    };
+    const landR = cutR(land);
     const dist = P.district(s0 + CHUNK / 2);
     const distAt = (s) => P.district(s);
     const wallMax = Math.max(this.wallH(s0), this.wallH(s0 + CHUNK / 2), this.wallH(s1));
@@ -481,7 +543,7 @@ export class World {
     }
 
     // ---- the roadside on land
-    for (const [x0, x1] of land) {
+    for (const [x0, x1] of landR) {
       // right: curb, verge, guard rail, (sometimes) a retaining wall, pavement, then city or fields
       this.strip(geo.concrete, [[ROAD_R, 0], [ROAD_R, 0.16], [WALL_D, 0.16]], x0, x1, anchor);
       this.guardRail(geo, x0, x1, GUARD_R, -1, anchor);
@@ -513,6 +575,9 @@ export class World {
         const pe = Math.max(WALL_D + 1.31, this.paveR(distAt(s))), h = hh(s);
         return [[pe, h], [pe + 35, h + 0.8 * hill(s, 0)], [pe + 85, h + 5 * hill(s, 3)], [WALL_D + 160, h + 16 * hill(s, 7) + 1.2]];
       }, x0, x1, anchor, { mode: 'world', tile: 6 });
+    }
+    for (const [x0, x1] of land) {
+      const hill = (s, k) => (1 - distAt(s).town) * (0.55 + 0.45 * vnoise(s / 260 + k, this.path.seed + 51));
       // left (beyond the oncoming lanes)
       this.strip(geo.concrete, [[-15.3, 0.16], [OPP_L, 0.16], [OPP_L, 0]], x0, x1, anchor);
       this.guardRail(geo, x0, x1, GUARD_L, 1, anchor);
@@ -526,7 +591,7 @@ export class World {
 
     // warm lamps on the retaining wall where it is tall
     for (let s = Math.ceil(s0 / WALL_LAMP_EVERY) * WALL_LAMP_EVERY + 14; s < s1; s += WALL_LAMP_EVERY) {
-      if (this.wallH(s) < 5.5 || !isLand(s)) continue;
+      if (this.wallH(s) < 5.5 || !isLand(s) || inExit(s)) continue;
       const d = WALL_D + 0.22;
       this.obox(geo.dark, s, d, 3.15, 0.5, 0.25, 0.5, anchor);
       this.obox(geo.lamp, s, d - 0.13, 3.2, 0.36, 0.05, 0.36, anchor);
@@ -537,26 +602,26 @@ export class World {
     // street lights on the pavements (towns only)
     for (let s = Math.ceil((s0 - 16) / 32) * 32 + 16; s < s1; s += 32) {
       if (s < s0 || !isLand(s) || P.mask(s, 20) > 0.5) continue;
-      if (distAt(s).town > 0.4) this.cityLamp(geo, s, WALL_D + 2.6, -1, hh(s), anchor, glows, lights);
+      if (distAt(s).town > 0.4 && !inExit(s)) this.cityLamp(geo, s, WALL_D + 2.6, -1, hh(s), anchor, glows, lights);
       if (isLand(s + 8) && distAt(s + 8).town > 0.4) this.cityLamp(geo, s + 8, -16.4, 1, 0.16, anchor, glows, lights);
     }
     // trees: a few along town pavements, forests in the countryside
     for (let s = s0 + 2 + R(3) * 3, k = 0; s < s1; s += 4 + R(10 + k) * 5, k++) {
-      if (nearBridge(s, 9) || !isLand(s) || P.mask(s, 30) > 0.5) continue;
+      if (nearBridge(s, 9) || !isLand(s) || (P.mask(s, 30) > 0.5 && !inExit(s))) continue;
       const dd = distAt(s);
       const forest = 1 - dd.town;
       if (R(20 + k) < 0.4 + forest * 0.6) {
         if (forest > 0.5) {
           const n = 2 + Math.floor(R(30 + k) * 4);
           for (let j = 0; j < n; j++) {
-            const side = R(40 + k * 5 + j) < 0.5 ? 1 : -1;
+            const side = R(40 + k * 5 + j) < 0.5 && !inExit(s) ? 1 : -1;
             const d = side > 0 ? 22 + R(50 + k * 5 + j) * 70 : -(20 + R(60 + k * 5 + j) * 70);
             const hill = 0.55 + 0.45 * vnoise(s / 260, this.path.seed + 51);
             const base = side > 0 ? hh(s) + (d > 50 ? hill * 0.8 * (d - 50) / 35 : 0) : 0.16;
             this.tree(geo, s + R(70 + j) * 3, d, base, anchor, R(80 + k + j));
           }
         } else if (R(90 + k) < 0.55) {
-          this.tree(geo, s, this.paveR(dd) - 2.2, hh(s), anchor, R(50 + k));
+          if (!inExit(s)) this.tree(geo, s, this.paveR(dd) - 2.2, hh(s), anchor, R(50 + k));
           if (R(95 + k) < 0.5) this.tree(geo, s + 3, this.paveL(dd) + 2.2, 0.16, anchor, R(51 + k));
         }
       }
@@ -571,6 +636,22 @@ export class World {
       this.obox(geo.metal, s, 11.8, 7.0, 0.2, 11.8, 0.25, anchor);
       this.obox(geo.dark, s + 0.12, 11.6, 5.3, 0.12, 5.2, 2.6, anchor);
       signs.push({ s: s - 0.02, d: 11.6, y: 5.3, w: 5.2, h: 2.6, mat: this.mSigns[ci % this.mSigns.length] });
+    }
+    // exit signs: 1 km gantry, 250 m gantry, and the gore sign at the split
+    for (const f of P.range(s0, s1 + 1100, 'exit')) {
+      for (const [ds, lines, key] of [[-900, [f.name, `EXIT ${f.no}  1 KM`], 'km'], [-250, [f.name, `EXIT ${f.no}  >`], 'go']]) {
+        const s = f.s0 + ds;
+        if (s < s0 || s >= s1 || P.mask(s, 30) > 0 && !P.at(s, 'exit', 0)) continue;
+        this.obox(geo.metal, s, GUARD_R + 0.6, 0.16, 0.3, 0.3, 7.6, anchor);
+        this.obox(geo.metal, s, 11.8, 7.0, 0.2, 11.8, 0.25, anchor);
+        this.obox(geo.dark, s + 0.12, 12.6, 5.3, 0.12, 5.6, 2.8, anchor);
+        signs.push({ s: s - 0.02, d: 12.6, y: 5.3, w: 5.6, h: 2.8, mat: this.exitSign(f.no + key, lines) });
+      }
+      const sg = f.s0 + 96;
+      if (sg >= s0 && sg < s1) {
+        this.obox(geo.metal, sg, 19.6, 0.02, 0.15, 0.15, 2.4, anchor);
+        signs.push({ s: sg - 0.05, d: 19.6, y: 2.3, w: 2.2, h: 1.1, mat: this.exitSign(f.no + 'g', [`EXIT ${f.no}`, '>']) });
+      }
     }
     // roadside billboard (lit)
     if (R(5) < 0.4 && !nearBridge(s0 + 34, 26) && isLand(s0 + 34) && P.mask(s0 + 34, 60) === 0) {
@@ -745,10 +826,12 @@ export class World {
     const R = (k) => hash(ci * 31.7 + k * 3.13 + 9.1);
     const P = this.planner;
     let k = 0;
-    const clear = (s, along, pad) =>
+    const clearFor = (side) => (s, along, pad) =>
       (bridgeS === null || s + along < bridgeS - pad || s > bridgeS + pad) && isLand(s) && isLand(s + along) &&
-      P.mask(s, 40) === 0 && P.mask(s + along, 40) === 0;
+      ((side < 0 && !P.at(s, 'tunnel', 40) && !P.at(s, 'harbor', 40) && !P.at(s, 'toll', 40)) ||
+        (P.mask(s, 40) === 0 && P.mask(s + along, 40) === 0));
     for (const side of [1, -1]) {
+      const clear = clearFor(side);
       // street-front row
       let s = s0 + R(k++) * 4;
       while (s < s0 + CHUNK) {
@@ -824,7 +907,7 @@ export class World {
         const d = side * (gap + across / 2);
         const sm = s + along / 2;
         const chance = 0.7 * dd.downtown + 0.22 * dd.town * (1 - dd.downtown);
-        if (R(k++) < chance && isLand(sm) && P.mask(sm, 40) === 0) {
+        if (R(k++) < chance && clear(sm - along / 2, along, 20)) {
           const uOff = Math.floor(R(k++) * 16) / 16;
           const vOff = Math.floor(R(k++) * 16) / 16;
           this.boxBuilding(geo.building, sm, d, -1, along, across, h + 1, a, uOff, vOff);
@@ -888,9 +971,11 @@ export class World {
   // ---------------------------------------------------------------- queries
   *allGlows() {
     for (const ch of this.chunks.values()) yield* ch.glows;
+    for (const n of this.nets.values()) yield* n.glows;
   }
   *allLights() {
     for (const ch of this.chunks.values()) yield* ch.lights;
+    for (const n of this.nets.values()) yield* n.lights;
   }
   *allObstacles() {
     for (const ch of this.chunks.values()) yield* ch.obstacles;
