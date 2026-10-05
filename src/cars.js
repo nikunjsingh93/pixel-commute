@@ -40,7 +40,7 @@ export class Builder {
     // CCW seen from outside
     this.quad(T[0], T[3], T[2], T[1], topCol); // top
     if (!opt.noBottom) this.quad(B[0], B[1], B[2], B[3], c.clone().multiplyScalar(0.3));
-    this.quad(B[1], B[0], T[0], T[1], rearCol); // rear (-z)
+    if (!opt.noRear) this.quad(B[1], B[0], T[0], T[1], rearCol); // rear (-z)
     this.quad(B[3], B[2], T[2], T[3], frontCol); // front (+z)
     this.quad(B[0], B[3], T[3], T[0], sideCol); // +x side
     this.quad(B[2], B[1], T[1], T[2], sideCol); // -x side
@@ -88,6 +88,7 @@ const TYPES = {
   van: { L: 5.3, W: 2.0, H: 2.15, weight: 2 },
   truck: { L: 7.6, W: 2.4, H: 3.4, weight: 1 },
   bus: { L: 11.5, W: 2.5, H: 3.2, weight: 0.4 },
+  coupe: { L: 4.55, W: 1.9, H: 1.24, weight: 0.8 },
 };
 
 export const CAR_COLORS = [
@@ -118,12 +119,13 @@ function build(type, color, opts = {}) {
   const dark = col.clone().multiplyScalar(0.62).getStyle();
   const shade = col.clone().multiplyScalar(0.8).getStyle();
   const hw = W / 2;
-  const wr = type === 'truck' || type === 'bus' ? 0.5 : type === 'van' || type === 'suv' ? 0.38 : 0.33;
+  const wr = type === 'truck' || type === 'bus' ? 0.5 : type === 'van' || type === 'suv' ? 0.38 : type === 'coupe' ? 0.34 : 0.33;
   const tailLight = '#ff2a1e';
   const headLight = '#fff1c8';
   let tail = { y: 0.72, h: 0.16 };
   let head = { y: 0.62, h: 0.12 };
   let lightOpt = {};
+  let plate = { y: 0.57, z: -L / 2 - 0.08 };
 
   if (type === 'sedan' || type === 'lux' || type === 'hatch') {
     const zr = -L / 2, zf = L / 2;
@@ -171,6 +173,7 @@ function build(type, color, opts = {}) {
     B.tbox(hw - 0.08, hw - 0.18, 1.05, H - 0.06, zr + 0.15, zf - 1.15, zr + 0.3, zf - 1.75, GLASS, { rear: '#4a5670', front: '#3c4760' });
     B.tbox(hw - 0.16, hw - 0.18, H - 0.07, H, zr + 0.3, zf - 1.75, zr + 0.34, zf - 1.8, color);
     b.head.box(-0.26, 0.26, 0.6, 0.74, zr - 0.08, zr - 0.04, '#6e5a1c');
+    plate = { y: 0.67, z: zr - 0.08 };
     tail = { y: 0.9, h: 0.2 };
     head = { y: 0.78, h: 0.14 };
     lightOpt = { tailW: 0.22 };
@@ -178,16 +181,40 @@ function build(type, color, opts = {}) {
     const zr = -L / 2, zf = L / 2;
     B.tbox(hw, hw - 0.05, 0.35, H, zr, zf - 1.0, zr + 0.02, zf - 1.3, color, { side: shade, rear: color });
     B.tbox(hw, hw - 0.1, 0.35, 1.05, zf - 1.0, zf, zf - 1.0, zf - 0.1, color, { side: shade });
-    B.tbox(hw - 0.06, hw - 0.12, 1.05, H - 0.1, zf - 1.05, zf - 0.6, zf - 1.3, zf - 1.25, GLASS); // windscreen
+    B.tbox(hw - 0.06, hw - 0.12, 1.05, H - 0.1, zf - 1.05, zf - 0.6, zf - 1.3, zf - 1.25, GLASS, { noRear: true }); // windscreen (open toward the cab)
     // rear windows
     B.box(-hw + 0.12, -0.05, 1.25, H - 0.2, zr - 0.03, zr + 0.01, '#2a3142');
     B.box(0.05, hw - 0.12, 1.25, H - 0.2, zr - 0.03, zr + 0.01, '#2a3142');
     B.box(-0.03, 0.03, 0.4, H - 0.08, zr - 0.04, zr, dark); // door split
     B.box(-hw + 0.02, hw - 0.02, 0.3, 0.55, zr - 0.08, zr + 0.2, TRIM);
     b.head.box(-0.26, 0.26, 0.6, 0.74, zr - 0.1, zr - 0.06, '#6e5a1c');
+    plate = { y: 0.67, z: zr - 0.1 };
     tail = { y: 0.85, h: 0.42 };
     head = { y: 0.8, h: 0.14 };
     lightOpt = { tailW: 0.14 };
+  } else if (type === 'coupe') {
+    // low wedge: long sloping bonnet, cabin set back, short tail with a lip spoiler
+    const zr = -L / 2, zf = L / 2;
+    const cb0 = zr + 1.0, cb1 = zf - 1.6, ct0 = zr + 1.4, ct1 = zf - 2.35;
+    if (opts.separateWheels) {
+      B.tbox(hw, hw - 0.06, 0.25, 0.78, cb1 - 0.05, zf, cb1 - 0.05, zf - 0.15, color, { side: shade, rear: color, top: color, yTopFront: 0.6 });
+      B.tbox(hw, hw - 0.06, 0.25, 0.78, zr, cb0 + 0.05, zr + 0.1, cb0 + 0.05, color, { side: shade, rear: dark, top: color });
+      B.tbox(hw, hw - 0.06, 0.25, 0.78, cb0, cb1, cb0, cb1, color, { side: shade, sideOnly: true });
+      B.box(-hw + 0.1, hw - 0.1, 0.25, 0.32, cb0, cb1, '#1a1b20');
+    } else {
+      B.tbox(hw, hw - 0.06, 0.25, 0.78, zr, zf, zr + 0.1, zf - 0.15, color, { side: shade, rear: dark, top: color, yTopFront: 0.6 });
+    }
+    B.box(-hw + 0.02, hw - 0.02, 0.2, 0.4, zr - 0.06, zr + 0.22, TRIM);
+    B.box(-hw + 0.02, hw - 0.02, 0.18, 0.34, zf - 0.22, zf + 0.06, TRIM);
+    B.tbox(hw - 0.1, hw - 0.3, 0.78, H - 0.04, cb0, cb1, ct0, ct1, GLASS, { side: GLASS, rear: '#4a5670', front: '#3c4760' });
+    B.tbox(hw - 0.29, hw - 0.31, H - 0.05, H, ct0 - 0.02, ct1 + 0.02, ct0 + 0.04, ct1 - 0.04, color);
+    B.box(-hw + 0.1, hw - 0.1, 0.84, 0.89, zr + 0.04, zr + 0.34, dark); // spoiler
+    for (const x of [-0.5, 0.5]) B.box(x - 0.04, x + 0.04, 0.78, 0.84, zr + 0.15, zr + 0.25, TRIM);
+    b.head.box(-0.26, 0.26, 0.42, 0.56, zr - 0.08, zr - 0.04, '#6e5a1c');
+    plate = { y: 0.49, z: zr - 0.08 };
+    tail = { y: 0.6, h: 0.1 };
+    head = { y: 0.52, h: 0.08 };
+    lightOpt = { tailW: 0.5, bar: true, headW: 0.4 };
   } else if (type === 'truck') {
     const zr = -L / 2, zf = L / 2;
     const cab = 2.0;
@@ -245,6 +272,7 @@ function build(type, color, opts = {}) {
     headY: head.y + head.h / 2,
     headX: W / 2 - 0.25,
     wheelGeo, wr, axle, rearAxle, hw,
+    plateY: plate.y, plateZ: plate.z,
   };
 }
 
@@ -281,11 +309,19 @@ export function makeCar(type, color) {
 
 // The player's car: same body, but separate wheel meshes positioned by the physics.
 // Local frame of the returned group matches the cars above (+Z forward, +X left).
-export function makePlayerCar(type, color, axles) {
+export function makePlayerCar(type, color, axles, plateTex) {
   const g = build(type, color, { separateWheels: true, axles });
   const group = new THREE.Group();
   const tailMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1.6, 1.6, 1.6) });
   group.add(new THREE.Mesh(g.body, bodyMat), new THREE.Mesh(g.tail, tailMat), new THREE.Mesh(g.head, headMat));
+  if (plateTex) {
+    // custom number plate just behind the plain plate block
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.54, 0.15),
+      new THREE.MeshBasicMaterial({ map: plateTex, color: new THREE.Color(1.15, 1.15, 1.15) }));
+    plate.position.set(0, g.plateY, g.plateZ - 0.012);
+    plate.rotation.y = Math.PI;
+    group.add(plate);
+  }
   // order FL, FR, RL, RR. Mesh +X is left. The pivots are meant to be moved
   // into the physics body frame (+X right), so the hub-cap side is mirrored.
   const wheels = [];
@@ -299,6 +335,26 @@ export function makePlayerCar(type, color, axles) {
     wheels.push({ pivot, spinner, x: side * (g.hw - 0.14), z });
   }
   return { group, tailMat, dims: g, type, wheels };
+}
+
+// number plate texture: yellow plate, dark 3x5 pixel font
+export function plateTexture(text, fontObj) {
+  const c = document.createElement('canvas');
+  c.width = 40;
+  c.height = 11;
+  const g = c.getContext('2d');
+  g.fillStyle = '#2a2005';
+  g.fillRect(0, 0, 40, 11);
+  g.fillStyle = '#e9c94a';
+  g.fillRect(1, 1, 38, 9);
+  const t = String(text || '').toUpperCase().slice(0, 8);
+  const w = fontObj.measure(t);
+  fontObj.draw(g, t, Math.floor((40 - w) / 2), 3, 1, '#2a2005');
+  const tex = new THREE.CanvasTexture(c);
+  tex.magFilter = tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
 export { TYPES };

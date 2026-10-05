@@ -29,9 +29,13 @@ function beam(b, a, c, t, col) {
 }
 
 export class Cockpit {
-  constructor() {
+  // cfg.dy / cfg.dz shift the whole interior (and the eye) to fit each car
+  constructor(cfg = { dy: 0, dz: 0 }) {
     this.group = new THREE.Group();
     this.exterior = new THREE.Group();
+    this.group.position.set(0, cfg.dy, cfg.dz);
+    this.exterior.position.set(0, cfg.dy, cfg.dz);
+    this.eye = EYE.clone().add(new THREE.Vector3(0, cfg.dy, cfg.dz));
     const b = new Builder();
     const DASH = '#33353d', DASH_TOP = '#3d4049', TRIMC = '#50535d', HEAD = '#5e5a52', DOOR = '#3a3c44';
 

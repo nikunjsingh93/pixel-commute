@@ -53,18 +53,21 @@ function tireCurve(s) {
 
 export class Vehicle {
   // ground: { ground(x, z, out) -> height, sets out.h / out.surf }
-  constructor(ground) {
+  constructor(ground, spec = SPEC) {
     this.g = ground;
-    const S = (this.spec = SPEC);
+    const S = (this.spec = spec);
     this.pos = new V3(); this.quat = new Q(); this.vel = new V3(); this.omega = new V3();
     this.right = new V3(1, 0, 0); this.up = new V3(0, 1, 0); this.fwd = new V3(0, 0, -1);
     const hw = S.track / 2, hl = S.wheelbase / 2;
+    // suspension mounts sit at the same height above the road for every car
+    // (tuned on the saloon: comH 0.55 -> -0.08), so taller cars still reach it
+    const wy = -S.comH + 0.47 + (S.radius - 0.33);
     // order: FL, FR, RL, RR (forward is -Z in body space)
     this.wheels = [
-      this._wheel(-hw, -0.08, -hl, true, S.drive[0], S.kF, S.arbF),
-      this._wheel(+hw, -0.08, -hl, true, S.drive[1], S.kF, S.arbF),
-      this._wheel(-hw, -0.08, +hl, false, S.drive[2], S.kR, S.arbR),
-      this._wheel(+hw, -0.08, +hl, false, S.drive[3], S.kR, S.arbR),
+      this._wheel(-hw, wy, -hl, true, S.drive[0], S.kF, S.arbF),
+      this._wheel(+hw, wy, -hl, true, S.drive[1], S.kF, S.arbF),
+      this._wheel(-hw, wy, +hl, false, S.drive[2], S.kR, S.arbR),
+      this._wheel(+hw, wy, +hl, false, S.drive[3], S.kR, S.arbR),
     ];
     this.gh = { h: 0, surf: 0 };
     this.steerInput = 0; this.steerAngle = 0;
@@ -94,7 +97,7 @@ export class Vehicle {
   maxSteer(v) {
     const S = this.spec;
     const vv = Math.max(v, 1) ** 2;
-    return Math.max(0.02, Math.min(0.62, (16 * S.wheelbase) / vv));
+    return Math.max(0.02, Math.min(0.62, (16 * S.wheelbase * (S.steerK || 1)) / vv));
   }
 
   // place upright at (x, y = ground, z) heading along (dx, dz)
@@ -109,7 +112,7 @@ export class Vehicle {
     this.gear = 1;
     for (let g = 1; g <= S.gears.length; g++) {
       this.gear = g;
-      if ((speed / S.radius) * 9.55 * S.gears[g - 1] * S.finalDrive < 2600) break;
+      if ((speed / S.radius) * 9.55 * S.gears[g - 1] * S.finalDrive < S.redline * 0.42) break;
     }
     this.rpm = S.idle; this.steerAngle = 0; this.shiftTimer = 0;
     this.updateBasis();
@@ -243,7 +246,7 @@ export class Vehicle {
       vc.copy(this.omega).cross(r).add(this.vel);
       const vx = vc.dot(wf), vy = vc.dot(wl);
       const mu0 = (wh.surf === 0 ? 1.38 : 1.15) * (1 - 0.42 * this.snow) * (1 - 0.18 * this.wet);
-      const mu = mu0 * (1 - 0.07 * (f / (S.mass * 2.45) - 1)) * (wh.rear ? 1.06 : 1.0);
+      const mu = mu0 * (1 - 0.07 * (f / (S.mass * 2.45) - 1)) * (wh.rear ? 1.06 : 1.0) * (S.gripK || 1);
       const Fz = f;
       const vref = Math.max(Math.abs(vx), 1.6);
       const R = S.radius, I = S.wheelInertia;
@@ -308,7 +311,8 @@ export class Vehicle {
       // (a right turn is a negative yaw rate about +Y with forward = -Z, hence the minus)
       const want = -((this.fwdSpeed * Math.tan(this.steerAngle)) / S.wheelbase) * 0.92;
       const err = yaw - want;
-      const tq = clamp(-err * 5200 * this.assist, -4200, 4200);
+      const ak = S.assistK || 1; // per car: how hard the assist helps it rotate
+      const tq = clamp(-err * 5200 * this.assist * ak, -4200 * ak, 4200 * ak);
       torque.addScaledVector(up, tq);
     }
     // integrate linear
@@ -417,10 +421,11 @@ export class Vehicle {
     const S = this.spec;
     if (this.gear < 1 || this.shiftTimer > 0) return;
     const rearOmega = Math.abs(this.fwdSpeed) / S.radius;
-    const upRpm = 2600 + 3000 * this.throttle * this.throttle;
-    const downRpm = 1150 + 900 * this.throttle;
+    // shift points scale with the engine (a diesel van revs far lower than the coupe)
+    const upRpm = S.redline * (0.41 + 0.47 * this.throttle * this.throttle);
+    const downRpm = S.redline * (0.18 + 0.14 * this.throttle);
     const rpmIn = (g) => ((rearOmega * 60) / (2 * Math.PI)) * S.gears[g - 1] * S.finalDrive;
     if (this.gear < S.gears.length && rpmIn(this.gear) > upRpm) { this.gear++; this.shiftTimer = 0.22; }
-    else if (this.gear > 1 && rpmIn(this.gear) < downRpm && rpmIn(this.gear - 1) < upRpm - 700) { this.gear--; this.shiftTimer = 0.18; }
+    else if (this.gear > 1 && rpmIn(this.gear) < downRpm && rpmIn(this.gear - 1) < upRpm - S.redline * 0.11) { this.gear--; this.shiftTimer = 0.18; }
   }
 }

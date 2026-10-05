@@ -2,14 +2,16 @@
 // the streamed highway, with impulse collisions against the barriers and
 // traffic, close-call detection and a pure-pursuit autopilot.
 import * as THREE from 'three';
-import { makePlayerCar } from './cars.js';
-import { Vehicle, SPEC } from './vehicle.js';
+import { makePlayerCar, plateTexture, TYPES } from './cars.js';
+import { Vehicle } from './vehicle.js';
 import { Cockpit } from './cockpit.js';
+import { carById, specFor } from './garage.js';
+import { font } from './font.js';
 import { LANE_D, ROAD_L, ROAD_R, WALL_D, GUARD_R } from './world.js';
 
 export const VMAX = 70; // gauge scale only (m/s)
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
-const MASS = { sedan: 1500, lux: 1900, hatch: 1250, suv: 2100, van: 2300, truck: 9000, bus: 12000 };
+const MASS = { sedan: 1500, lux: 1900, hatch: 1250, suv: 2100, van: 2300, truck: 9000, bus: 12000, coupe: 1450 };
 
 // ground under the car: the road surface (flat cross-section), curb + verge
 class RoadGround {
@@ -51,29 +53,11 @@ class RoadGround {
 }
 
 export class Player {
-  constructor(root, path) {
+  constructor(root, path, sel = { car: 'saloon', paint: '#15161b', plate: '8-BIT' }) {
     this.path = path;
+    this.root = root;
     this.groundP = new RoadGround(path);
-    this.veh = new Vehicle(this.groundP);
-    const car = makePlayerCar('lux', '#15161b', [SPEC.wheelbase / 2, -SPEC.wheelbase / 2]);
-    this.dims = car.dims;
-    this.L = car.dims.L;
-    this.W = car.dims.W;
-    this.tailMat = car.tailMat;
-    // physics body frame (-Z forward) -> car mesh frame (+Z forward)
-    this.mesh = new THREE.Group();
-    this.inner = car.group;
-    this.inner.rotation.y = Math.PI;
-    this.inner.position.y = -SPEC.comH;
-    this.mesh.add(this.inner);
-    this.wheels = car.wheels;
-    for (const w of this.wheels) {
-      this.inner.remove(w.pivot);
-      this.mesh.add(w.pivot);
-    }
-    this.cockpit = new Cockpit();
-    this.inner.add(this.cockpit.group, this.cockpit.exterior);
-    root.add(this.mesh);
+    this.setCar(sel, false);
 
     this.v = 0;
     this.latV = 0;
@@ -100,6 +84,58 @@ export class Player {
     this._cq = {};
     this._cf = {};
     this.place(300, LANE_D[1], 24);
+  }
+
+  // build (or swap to) a car: model, physics spec, cockpit, paint and plate.
+  // When swapping, the new car takes over the old one's position and speed.
+  setCar(sel, keepState = true) {
+    const def = carById(sel.car);
+    this.sel = { ...sel };
+    this.def = def;
+    const old = this.veh;
+    // the spec's hull follows the car's size (player cars get +0.16 m of headroom)
+    const t = TYPES[def.model];
+    const spec = specFor(def, { L: t.L, W: t.W, H: t.H + 0.16 });
+    const car = makePlayerCar(def.model, sel.paint, [spec.wheelbase / 2, -spec.wheelbase / 2], plateTexture(sel.plate, font));
+    this.veh = new Vehicle(this.groundP, spec);
+    if (old && keepState) {
+      this.veh.pos.copy(old.pos);
+      this.veh.pos.y += spec.comH - old.spec.comH;
+      this.veh.quat.copy(old.quat);
+      this.veh.vel.copy(old.vel);
+      this.veh.omega.copy(old.omega);
+      this.veh.snow = old.snow;
+      this.veh.wet = old.wet;
+      for (const wh of this.veh.wheels) { wh.omega = old.fwdSpeed / spec.radius; wh.comp = 0.09; wh.prevComp = 0.09; }
+      this.veh.updateBasis();
+      this.veh.fwdSpeed = old.fwdSpeed;
+    }
+    this.dims = car.dims;
+    this.L = car.dims.L;
+    this.W = car.dims.W;
+    this.tailMat = car.tailMat;
+    // physics body frame (-Z forward) -> car mesh frame (+Z forward)
+    const visible = this.mesh ? this.mesh.visible : true;
+    if (this.mesh) {
+      this.root.remove(this.mesh);
+      this.mesh.traverse((o) => o.geometry && o.geometry.dispose());
+    }
+    this.mesh = new THREE.Group();
+    this.mesh.visible = visible;
+    this.inner = car.group;
+    this.inner.rotation.y = Math.PI;
+    this.inner.position.y = -spec.comH;
+    this.mesh.add(this.inner);
+    this.wheels = car.wheels;
+    for (const w of this.wheels) {
+      this.inner.remove(w.pivot);
+      this.mesh.add(w.pivot);
+    }
+    const cockpitVisible = this.cockpit ? this.cockpit.group.visible : false;
+    this.cockpit = new Cockpit(def.cockpit);
+    this.cockpit.setVisible(cockpitVisible);
+    this.inner.add(this.cockpit.group, this.cockpit.exterior);
+    this.root.add(this.mesh);
   }
 
   place(s, d, speed) {
@@ -373,7 +409,7 @@ export class Player {
     const lon = (dx * V.fwd.x + dz * V.fwd.z) / fl;
     const lat = (dx * V.right.x + dz * V.right.z) / rl;
     const ang = Math.atan2(lat, Math.max(lon, 0.5));
-    const delta = Math.atan2(2 * SPEC.wheelbase * Math.sin(ang), Math.hypot(lat, lon));
+    const delta = Math.atan2(2 * V.spec.wheelbase * Math.sin(ang), Math.hypot(lat, lon));
     const target = clamp(delta / V.maxSteer(speed), -1, 1);
     this.autoSteer += (target - this.autoSteer) * clamp(dt * 8, 0, 1);
     return { throttle, brake, steer: this.autoSteer };
@@ -396,7 +432,7 @@ export class Player {
     this.mesh.updateMatrixWorld(true);
     return {
       x: V.pos.x - origin.x,
-      y: V.pos.y - SPEC.comH - origin.y,
+      y: V.pos.y - V.spec.comH - origin.y,
       z: V.pos.z - origin.z,
       h: this.heading,
     };

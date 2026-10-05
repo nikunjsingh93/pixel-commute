@@ -8,11 +8,10 @@ import { Glows, LightPool } from './fx.js';
 import { Traffic } from './traffic.js';
 import { Player, VMAX } from './player.js';
 import { Weather } from './weather.js';
-import { EYE } from './cockpit.js';
 import { setupTouch, isTouchDevice } from './touch.js';
 import { PhotoMode } from './photo.js';
 import { Menu } from './ui.js';
-import { SPEC } from './vehicle.js';
+import { Garage } from './garage.js';
 import { Hud } from './hud.js';
 import { Audio } from './audio.js';
 
@@ -51,7 +50,9 @@ const glows = new Glows(scene);
 const lamps = new LightPool(scene, 10);
 const carLights = new LightPool(scene, 4);
 const traffic = new Traffic(world.root, path);
-const player = new Player(world.root, path);
+let carSel = { car: 'saloon', paint: '#15161b', plate: '8-BIT' };
+try { carSel = { ...carSel, ...JSON.parse(loadPref('car') || '{}') }; } catch (e) { /* keep defaults */ }
+const player = new Player(world.root, path, carSel);
 traffic.planner = planner;
 player.planner = planner;
 player.world = world;
@@ -316,7 +317,7 @@ function menuState() {
   return {
     cam: CAMS[st.cam], auto: player.auto, period: look.name, weather: W.name,
     radio: !!(audio.ctx && audio.music), station: audio.stationName ? audio.stationName() : '',
-    res: `${st.h}p`, touch: st.touch,
+    res: `${st.h}p`, touch: st.touch, car: player.def ? player.def.name : '',
   };
 }
 const panels = [];
@@ -334,12 +335,32 @@ const pauseMenu = new Menu('pause-menu', [
   { label: (m) => `Station<small>${m.station}</small>`, run: () => runAction('KeyN') },
   { label: (m) => `Resolution<small>${m.res}</small>`, run: () => cycleResolution() },
   { label: () => 'Fullscreen<small>toggle</small>', run: () => toggleFullscreen(), spin: false },
+  { label: (m) => `Garage<small>${m.car}</small>`, run: () => openGarage(), spin: false },
 ], menuState, { right: 'max(18px, env(safe-area-inset-right))', top: '50%', transform: 'translateY(-50%)' });
 
 const titleMenu = new Menu('title-menu', [
   { cls: 'primary', label: () => 'Drive<small>zen</small>', run: () => startDriving(), spin: false },
+  { label: (m) => `Garage<small>${m.car}</small>`, run: () => openGarage(), spin: false },
   { label: () => 'Controls', run: () => { hud.help = !hud.help; }, spin: false },
-], menuState, { left: '50%', bottom: 'max(16px, 7vh)', transform: 'translateX(-50%)', '--cols': 2 });
+], menuState, { left: '50%', bottom: 'max(16px, 7vh)', transform: 'translateX(-50%)', '--cols': 3 });
+
+// ------------------------------------------------------------------ garage
+const garage = new Garage({
+  current: () => ({ ...player.sel }),
+  apply: (sel) => {
+    player.setCar(sel);
+    savePref('car', JSON.stringify(sel));
+  },
+  close: () => {
+    garage.open(false);
+    hud.say(player.def.name.toUpperCase() + '  ' + player.sel.plate);
+  },
+});
+panels.push(garage.panel);
+function openGarage() {
+  hud.help = false;
+  garage.open(true);
+}
 
 setInterval(() => {
   pauseMenu.open(st.mode === 'drive' && st.paused && !anyPanelOpen());
@@ -439,6 +460,24 @@ function updateCamera(dt, car) {
   const mode = CAMS[st.cam];
   const o = world.origin;
   const V = player.veh;
+  if (garage.isOpen) {
+    // showroom: orbit the car slowly, keeping it on the left of the panel
+    player.mesh.visible = true;
+    player.cockpit.setVisible(false);
+    const a = st.time * 0.22;
+    const cp = _v3.set(car.x, car.y + 0.6, car.z);
+    const r = 5.5 + player.L * 0.95;
+    camera.position.set(cp.x + Math.cos(a) * r, cp.y + 1.0, cp.z + Math.sin(a) * r);
+    camera.up.copy(_up);
+    // aim to the right of the car so it sits in the left half (the panel is on the right)
+    const dx = cp.x - camera.position.x, dz = cp.z - camera.position.z, dl = Math.hypot(dx, dz);
+    camera.lookAt(cp.x - (dz / dl) * r * 0.2, cp.y, cp.z + (dx / dl) * r * 0.2);
+    camera.near = 0.3;
+    camera.fov = 45;
+    camera.updateProjectionMatrix();
+    camState.init = false;
+    return;
+  }
   player.mesh.visible = mode !== 'BUMPER';
   player.cockpit.setVisible(mode === 'COCKPIT');
   camState.shakeT += dt;
@@ -449,7 +488,7 @@ function updateCamera(dt, car) {
   const sy = (Math.sin(T * 27.7 + 2.1) + Math.sin(T * 13.1)) * 0.5 * buzz;
   let fov = 52;
   let near = 0.3;
-  const carPos = _v3.set(car.x, car.y + SPEC.comH, car.z);
+  const carPos = _v3.set(car.x, car.y + V.spec.comH, car.z);
   if (mode === 'CHASE' || mode === 'FAR') {
     // camera direction: between the car's nose and its velocity
     const fwdH = _v1.set(V.fwd.x, 0, V.fwd.z).normalize();
@@ -458,11 +497,12 @@ function updateCamera(dt, car) {
     if (!camState.init) camState.dir.copy(fwdH);
     camState.dir.lerp(fwdH, 1 - Math.exp(-dt * 3.2)).normalize();
     const far = mode === 'FAR';
-    const dist = far ? 11.5 : 6.6, height = far ? 3.5 : 1.95, lookH = far ? 0.9 : 1.15;
+    const big = Math.sqrt(player.L / 5.2) * (0.85 + 0.15 * (player.dims.H / 1.64));
+    const dist = (far ? 11.5 : 6.6) * big, height = (far ? 3.5 : 1.95) * big, lookH = far ? 0.9 : 1.15;
     const offT = _v1.copy(camState.dir).multiplyScalar(-dist);
-    offT.y = -SPEC.comH + height;
+    offT.y = -V.spec.comH + height;
     const lookT = _v2.copy(camState.dir).multiplyScalar(5.5);
-    lookT.y = -SPEC.comH + lookH;
+    lookT.y = -V.spec.comH + lookH;
     if (!camState.init) {
       camState.off.copy(offT);
       camState.lookOff.copy(lookT);
@@ -484,7 +524,7 @@ function updateCamera(dt, car) {
     camState.init = true;
   } else if (mode === 'COCKPIT' || mode === 'BUMPER') {
     const inside = mode === 'COCKPIT';
-    const eye = inside ? EYE : _v2.set(0, 0.78, player.L / 2 - 0.1);
+    const eye = inside ? player.cockpit.eye : _v2.set(0, 0.78, player.L / 2 - 0.1);
     player.toWorld(eye.x, eye.y, eye.z, camera.position);
     player.toWorld(eye.x, eye.y - (inside ? 1.5 : 0.4), eye.z + 20, _v1);
     // the head stays fairly level: blend the car's roll/pitch with world up
@@ -588,7 +628,7 @@ let lastDistrict = '';
 const TUNNEL_FOG = new THREE.Color(0.06, 0.05, 0.04);
 function step(dt) {
   st.time += dt;
-  const frozen = st.paused || photo.active;
+  const frozen = st.paused || photo.active || garage.isOpen;
   if (!frozen) {
     st.hour = (st.hour + dt * st.timeScale) % 24;
   }
@@ -692,6 +732,8 @@ function render(dt) {
   lamps.assign(lampCands, focus, 55);
 
   traffic.render(world.origin, glows, wet, Math.max(0.35, night), st.time, streak);
+  // the showroom keeps the cars around the player out of shot
+  for (const tc of traffic.cars) tc.mesh.scale.setScalar(garage.isOpen && Math.abs(tc.s - player.s) < 25 ? 0 : 1);
   // nearest traffic tail lights get real red lights (wet-road shine)
   carCands.length = 0;
   for (const tc of traffic.cars) {
@@ -739,13 +781,13 @@ function render(dt) {
   hud.draw({
     mode: st.mode, hour: st.hour, period: look.name, weather: W.name, odo: player.odo, closeCalls: player.closeCalls,
     speed: player.v, vmax: VMAX, auto: player.auto, music: audio.ctx && audio.music, station: audio.station,
-    time: st.time, paused: st.paused, touch: st.touch, photo: photo.active, gear: player.gearLabel(), rpm: player.veh.rpm, redline: SPEC.redline,
+    time: st.time, paused: st.paused, touch: st.touch, photo: photo.active || garage.isOpen, gear: player.gearLabel(), rpm: player.veh.rpm, redline: player.veh.spec.redline,
   }, dt);
   if (CAMS[st.cam] === 'COCKPIT') {
     const V = player.veh;
     const STN = ['88.1', '91.4', 'AM640', '101.9'];
     player.cockpit.update((V.wheels[0].steerA + V.wheels[1].steerA) / 2, Math.abs(V.fwdSpeed) * 3.6, V.rpm, player.gearLabel(),
-      SPEC.redline, audio.ctx && audio.music ? STN[audio.station % 4] : 'OFF', st.time);
+      player.veh.spec.redline, audio.ctx && audio.music ? STN[audio.station % 4] : 'OFF', st.time);
   }
   audio.update(Math.abs(player.v), player.veh.throttle, W.kind === 'rain' ? 1 : 0, player.scrape, player.veh.rpm, player.veh.slip);
 }
@@ -775,7 +817,7 @@ if (!HOLD) requestAnimationFrame(loop);
 
 // ------------------------------------------------------------------ dev hooks
 window.__game = {
-  st, player, traffic, world, planner, camera, pipe, sky, renderer, photo, enterPhoto, exitPhoto, pauseMenu,
+  st, player, traffic, world, planner, camera, garage, openGarage, pipe, sky, renderer, photo, enterPhoto, exitPhoto, pauseMenu,
   advance(sec, fps = 30) {
     const dt = 1 / fps;
     for (let t = 0; t < sec; t += dt) {
