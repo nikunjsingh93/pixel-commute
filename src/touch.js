@@ -39,6 +39,11 @@ export function setupTouch(game) {
   setInterval(() => root.classList.toggle('hidden', !game.driving()), 100);
 
   // never let the page scroll / zoom while playing
-  for (const ev of ['touchmove', 'gesturestart']) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+  // (panels such as the garage still scroll with a finger)
+  for (const ev of ['touchmove', 'gesturestart']) {
+    document.addEventListener(ev, (e) => {
+      if (!(e.target && e.target.closest && e.target.closest('.ui-panel'))) e.preventDefault();
+    }, { passive: false });
+  }
   document.addEventListener('contextmenu', (e) => e.preventDefault());
 }

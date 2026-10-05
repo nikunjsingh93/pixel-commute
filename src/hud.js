@@ -228,9 +228,10 @@ export class Hud {
     const keyW = Math.max(...lines.map(([k]) => font.measure(k))) + 10;
     const w = keyW + Math.max(...lines.map(([, v]) => font.measure(v))) + 10;
     const h = lines.length * 7 + 8;
-    const x = Math.floor((cx ?? this.w / 2) - w / 2);
-    const y = top ?? Math.floor(this.h / 2 - h / 2);
-    this.panel(x, y, w, h);
+    const x = Math.max(3, Math.min(this.w - w - 3, Math.floor((cx ?? this.w / 2) - w / 2)));
+    const y = Math.max(3, top ?? Math.floor(this.h / 2 - h / 2));
+    this.g.fillStyle = 'rgba(10,13,24,0.86)';
+    this.g.fillRect(x, y, w, h);
     lines.forEach(([k, v], i) => {
       this.text(k, x + 5, y + 5 + i * 7, C.warm);
       this.text(v, x + 5 + keyW, y + 5 + i * 7, C.ink);
@@ -259,6 +260,7 @@ export class Hud {
   drawTitle(st) {
     const { w, h } = this;
     const g = this.g;
+    if (this.help) return this.drawHelp(st.touch); // the controls list replaces the title
     const cy = Math.floor(h * 0.28);
     const sc = w >= 300 ? 3 : 2;
     // soft dark bands behind the text

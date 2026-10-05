@@ -138,7 +138,7 @@ function resize() {
   const hs = Math.max(1, Math.round(h / 200));
   hud.resize(Math.ceil(w / hs), Math.ceil(h / hs));
   // menu text: font pixels of k device pixels (about 4 css px on a monitor)
-  const kf = Math.max(2, Math.round(devH / (st.touch ? 170 : 230)));
+  const kf = Math.max(2, Math.round(devH / (st.touch ? 125 : 190)));
   const fw = Math.ceil(devW / kf), fh = Math.ceil(devH / kf);
   hud.resizeFine(fw, fh);
   hud2Canvas.style.width = `${(fw * kf) / dpr}px`;
@@ -391,7 +391,7 @@ const titleMenu = new Menu('title-menu', [
 
 // ------------------------------------------------------------------ jobs panel
 panels.push(commute.panel);
-Object.assign(commute.panel.el.style, { left: 'auto', right: 'max(18px, env(safe-area-inset-right))', transform: 'translateY(-50%)' });
+Object.assign(commute.panel.root.style, { left: 'auto', right: 'max(18px, env(safe-area-inset-right))', transform: 'translateY(-50%)' });
 function openJobs() {
   if (st.mode !== 'drive' || photo.active) return;
   if (!commute.on) startDriving('commute');
@@ -401,7 +401,7 @@ function openJobs() {
 
 // ------------------------------------------------------------------ radio panel
 const radioPanel = new Panel('radio');
-Object.assign(radioPanel.el.style, { left: 'auto', right: 'max(18px, env(safe-area-inset-right))', transform: 'translateY(-50%)', width: 'min(460px, 92vw)' });
+Object.assign(radioPanel.root.style, { left: 'auto', right: 'max(18px, env(safe-area-inset-right))', transform: 'translateY(-50%)', width: 'min(460px, 92vw)' });
 panels.push(radioPanel);
 function openRadio() {
   startAudio();
@@ -485,9 +485,12 @@ function openGarage() {
   garage.open(true);
 }
 
+const helpX = button(document.body, 'ui-xbtn', '&#x2715;', null, () => { hud.help = false; });
+helpX.style.display = 'none';
 setInterval(() => {
   pauseMenu.open(st.mode === 'drive' && st.paused && !anyPanelOpen());
-  titleMenu.open(st.mode === 'title' && !anyPanelOpen());
+  titleMenu.open(st.mode === 'title' && !anyPanelOpen() && !hud.help);
+  helpX.style.display = hud.help && !st.paused && !anyPanelOpen() ? '' : 'none';
 }, 100);
 
 // ------------------------------------------------------------------ photo mode

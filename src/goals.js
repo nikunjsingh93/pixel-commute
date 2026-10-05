@@ -47,7 +47,8 @@ export class Commute {
       Object.assign(this.save, JSON.parse(localStorage.getItem(KEY) || '{}'));
     } catch (e) { /* fresh start */ }
     this.panel = new Panel('jobs');
-    Object.assign(this.panel.el.style, { width: 'min(560px, 94vw)' });
+    Object.assign(this.panel.root.style, { width: 'min(560px, 94vw)' });
+    this.panel.onClose = () => this.close();
   }
 
   get money() { return this.save.money; }

@@ -33,6 +33,13 @@ const CSS = `
   color: #f4f1e8; font: 700 14px/1.45 'Courier New', ui-monospace, monospace; letter-spacing: 1px; text-transform: uppercase;
   background: rgba(10,13,24,.88); border: 2px solid rgba(255,205,110,.6); border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
 .ui-panel.open { display: block; }
+/* the frame stays put (close X pinned top-right); only the body scrolls */
+.ui-panel { overflow: hidden; }
+.ui-panel > .ui-body { max-height: calc(92vh - 28px); overflow-y: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding-right: 4px; }
+.ui-panel .pb.ui-x { position: absolute; top: 8px; right: 8px; z-index: 2; width: 40px; height: 40px; min-width: 40px; padding: 0;
+  border-radius: 50%; font-size: 18px; line-height: 1; }
+.ui-xbtn { position: fixed !important; z-index: 15; width: 48px; height: 48px; border-radius: 50%; font-size: 20px;
+  top: max(12px, env(safe-area-inset-top)); right: max(18px, env(safe-area-inset-right)); }
 .ui-panel h2 { margin: 0 0 10px; font-size: 16px; letter-spacing: 3px; color: #ffcd6e; }
 .ui-panel .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 .ui-panel .pb { position: relative; height: 40px; min-width: 44px; padding: 0 12px; border-radius: 8px; font-size: 13px; }
@@ -77,6 +84,7 @@ export function button(parent, cls, html, css, onDown, onUp) {
   b.className = 'pb ' + (cls || '');
   b.innerHTML = html;
   if (css) Object.assign(b.style, css);
+  if (parent.closest && parent.closest('.ui-panel')) return tapButton(b, parent, onDown);
   const ids = new Set();
   b.addEventListener('pointerdown', (e) => {
     e.preventDefault();
@@ -96,6 +104,35 @@ export function button(parent, cls, html, css, onDown, onUp) {
   b.addEventListener('pointerup', up);
   b.addEventListener('pointercancel', up);
   b.addEventListener('lostpointercapture', up);
+  b.addEventListener('contextmenu', (e) => e.preventDefault());
+  parent.appendChild(b);
+  return b;
+}
+
+// a button that runs on a tap: a finger that moves (scrolls) cancels it
+function tapButton(b, parent, run) {
+  b.style.touchAction = 'pan-y';
+  let start = null;
+  b.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    b.classList.add('on');
+  });
+  b.addEventListener('pointermove', (e) => {
+    if (start && e.pointerId === start.id && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) {
+      start = null;
+      b.classList.remove('on');
+    }
+  });
+  b.addEventListener('pointerup', (e) => {
+    b.classList.remove('on');
+    if (start && e.pointerId === start.id && run) run(e);
+    start = null;
+  });
+  b.addEventListener('pointercancel', () => {
+    start = null;
+    b.classList.remove('on');
+  });
   b.addEventListener('contextmenu', (e) => e.preventDefault());
   parent.appendChild(b);
   return b;
@@ -155,19 +192,27 @@ export class Menu {
 }
 
 // A modal panel whose body is rebuilt by render(panel)
+// root = the scrolling box (with a close X pinned top-right), el = the body
+// that each panel rebuilds. onClose runs when the X is tapped.
 export class Panel {
   constructor(id) {
     inject();
+    this.root = document.createElement('div');
+    this.root.id = id;
+    this.root.className = 'ui-panel';
+    this.root.addEventListener('pointerdown', (e) => e.stopPropagation());
+    document.body.appendChild(this.root);
+    const x = button(this.root, 'ui-x', '&#x2715;', null, () => (this.onClose ? this.onClose() : this.open(false)));
+    x.setAttribute('aria-label', 'Close');
     this.el = document.createElement('div');
-    this.el.id = id;
-    this.el.className = 'ui-panel';
-    this.el.addEventListener('pointerdown', (e) => e.stopPropagation());
-    document.body.appendChild(this.el);
+    this.el.className = 'ui-body';
+    this.root.appendChild(this.el);
     this.isOpen = false;
   }
   open(on) {
     this.isOpen = on;
-    this.el.classList.toggle('open', on);
+    this.root.classList.toggle('open', on);
+    if (on) this.el.scrollTop = 0;
   }
 }
 

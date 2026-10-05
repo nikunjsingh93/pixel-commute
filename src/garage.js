@@ -72,7 +72,8 @@ export class Garage {
   constructor(game) {
     this.g = game;
     this.panel = new Panel('garage');
-    Object.assign(this.panel.el.style, { left: 'auto', right: 'max(18px, env(safe-area-inset-right))', transform: 'translateY(-50%)', width: 'min(440px, 92vw)' });
+    this.panel.onClose = () => this.g.close();
+    Object.assign(this.panel.root.style, { left: 'auto', right: 'max(18px, env(safe-area-inset-right))', transform: 'translateY(-50%)', width: 'min(440px, 92vw)' });
   }
 
   get isOpen() {
@@ -117,7 +118,8 @@ export class Garage {
       const sw = document.createElement('div');
       sw.className = 'ui-swatch' + (p === sel.paint ? ' sel' : '');
       sw.style.background = p;
-      sw.addEventListener('pointerdown', (e) => {
+      // click (not pointerdown): a finger scrolling the panel doesn't pick a paint
+      sw.addEventListener('click', (e) => {
         e.stopPropagation();
         this.g.apply({ ...this.g.current(), paint: p });
         this.render();
