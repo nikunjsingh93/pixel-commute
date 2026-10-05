@@ -285,6 +285,111 @@ export function billboardTexture(lines, bg, fg, font) {
   return t;
 }
 
+// Tunnel wall tiles: cream ceramic grid with a dark kick strip at the bottom
+export function tileTexture() {
+  const W = 64, H = 64;
+  const [c, g] = canvas(W, H);
+  g.fillStyle = '#c9c0a8';
+  g.fillRect(0, 0, W, H);
+  for (let i = 0; i < W * H * 0.15; i++) {
+    g.fillStyle = rnd() < 0.5 ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.05)';
+    g.fillRect((rnd() * W) | 0, (rnd() * H) | 0, 1, 1);
+  }
+  g.fillStyle = 'rgba(60,50,40,0.35)';
+  for (let y = 0; y < H; y += 8) g.fillRect(0, y, W, 1);
+  for (let x = 0; x < W; x += 8) g.fillRect(x, 0, 1, H);
+  // grime toward the bottom (v = 0 is the floor)
+  for (let y = H - 16; y < H; y++) {
+    g.fillStyle = `rgba(40,34,28,${((y - (H - 16)) / 16) * 0.55})`;
+    g.fillRect(0, y, W, 1);
+  }
+  return tex(c);
+}
+
+// Suburban house fronts: 4 colour bands (one per house style), two floors
+// of windows per band. map + emissive (lit windows).
+export function houseTextures() {
+  const W = 128, H = 128;
+  const [c, g] = canvas(W, H);
+  const [ce, ge] = canvas(W, H);
+  ge.fillStyle = '#000';
+  ge.fillRect(0, 0, W, H);
+  const sidings = ['#c9bfa7', '#8a9bb0', '#a35a46', '#7f9479'];
+  sidings.forEach((col, b) => {
+    const y0 = b * 32;
+    g.fillStyle = col;
+    g.fillRect(0, y0, W, 32);
+    g.fillStyle = 'rgba(0,0,0,0.12)';
+    for (let y = y0 + 2; y < y0 + 32; y += 3) g.fillRect(0, y, W, 1); // siding lines
+    for (let x = 4; x < W; x += 16) {
+      for (const wy of [y0 + 4, y0 + 19]) {
+        g.fillStyle = '#e8e4da';
+        g.fillRect(x - 1, wy - 1, 8, 9);
+        g.fillStyle = '#26303f';
+        g.fillRect(x, wy, 6, 7);
+        if (rnd() < 0.45) {
+          ge.fillStyle = rnd() < 0.7 ? '#ffd08a' : '#ffe9c0';
+          ge.fillRect(x, wy, 6, 7);
+          ge.fillStyle = 'rgba(0,0,0,0.5)';
+          ge.fillRect(x + 3, wy, 1, 7);
+        }
+      }
+    }
+    // a front door every other house width
+    g.fillStyle = '#4a2f22';
+    g.fillRect(60, y0 + 21, 6, 11);
+  });
+  return { map: tex(c), emissive: tex(ce) };
+}
+
+// Amber flashing arrow board for roadworks (points left: merge left)
+export function arrowBoardTexture() {
+  const W = 32, H = 16;
+  const [c, g] = canvas(W, H);
+  g.fillStyle = '#0c0d10';
+  g.fillRect(0, 0, W, H);
+  g.fillStyle = '#ffb02a';
+  const px = [
+    '................................',
+    '..........#.....................',
+    '.........##.....................',
+    '........###.....................',
+    '.......####################.....',
+    '......#####################.....',
+    '.....######################.....',
+    '......#####################.....',
+    '.......####################.....',
+    '........###.....................',
+    '.........##.....................',
+    '..........#.....................',
+  ];
+  px.forEach((row, y) => [...row].forEach((ch, x) => ch === '#' && g.fillRect(x, y + 2, 1, 1)));
+  const t = tex(c, { repeat: false });
+  t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  return t;
+}
+
+// Simple road sign faces: yellow diamond-ish (works) or green (toll / exits)
+export function roadSignTexture(lines, bg, fg, font) {
+  const W = 64, H = 32;
+  const [c, g] = canvas(W, H);
+  g.fillStyle = fg;
+  g.fillRect(0, 0, W, H);
+  g.fillStyle = bg;
+  g.fillRect(2, 2, W - 4, H - 4);
+  lines.forEach((ln, i) => {
+    const sc = lines.length === 1 ? 2 : 1;
+    const w = font.measure(ln) * sc;
+    const y = lines.length === 1 ? 11 : 6 + i * 8;
+    font.draw(g, ln, ((W - w) / 2) | 0, y, sc, fg);
+  });
+  const t = tex(c, { repeat: false });
+  t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  return t;
+}
+
 export function groundTexture(base) {
   const W = 64, H = 64;
   const [c, g] = canvas(W, H);

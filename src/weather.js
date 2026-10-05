@@ -88,7 +88,7 @@ export class Weather {
   // vel: camera velocity (world), so flakes stream past the windscreen
   // clearR: keep a particle-free bubble around the camera (cockpit view)
   update(dt, camera, carVel, time, viewH, light, clearR = 0) {
-    const n = Math.floor(this.N * Math.min(1, this.amount));
+    const n = Math.floor(this.N * Math.min(1, this.amount) * (this.amountScale ?? 1));
     const cam = camera.position;
     this.drift += dt;
     const snow = this.kind === 'snow';

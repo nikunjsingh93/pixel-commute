@@ -60,7 +60,7 @@ export class Traffic {
     for (let tries = 0; tries < 8; tries++) {
       let lane = (rnd() * 4) | 0;
       if ((c.type === 'truck' || c.type === 'bus') && lane === 0) lane = 2 + ((rnd() * 2) | 0);
-      let ok = true;
+      let ok = !(this.planner && this.planner.laneClosed(s, lane));
       for (const o of this.cars) {
         if (o === c) continue;
         if (Math.abs(o.d - LANE_D[lane]) < 2.5 && Math.abs(o.s - s) < 22 + (o.L + c.L) / 2) {
@@ -142,16 +142,27 @@ export class Traffic {
         continue;
       }
       const { o, gap } = this.leader(c, c.d, this.cars, player);
-      let a = this.idm(c.v, c.v0, gap, o ? o.v : c.v0);
+      const PL = this.planner;
+      // slow through toll plazas
+      const vWant = PL && PL.at(c.s, 'toll', 70) ? Math.min(c.v0, 12) : c.v0;
+      let a = this.idm(c.v, vWant, gap, o ? o.v : vWant);
 
+      // roadworks: leave a closed lane (merge left, squeezing in if needed)
+      if (PL && c.lane === c.target && PL.laneClosed(c.s, c.lane) && c.lane > 0) {
+        c.target = c.lane - 1;
+        c.blinkSide = -1;
+        c.blink = 1.8;
+      }
       // lane changes
       c.cool -= dt;
-      if (c.cool <= 0 && c.lane === c.target && o && gap < 45 && o.v < c.v0 - 2.5) {
+      const keep = PL && PL.noLaneChange(c.s);
+      if (!keep && c.cool <= 0 && c.lane === c.target && o && gap < 45 && o.v < c.v0 - 2.5) {
         c.cool = 3 + rnd() * 4;
         const opts = [c.lane - 1, c.lane + 1].filter((l) => l >= 0 && l < 4);
         if (rnd() < 0.5) opts.reverse();
         for (const l of opts) {
           if ((c.type === 'truck' || c.type === 'bus') && l === 0) continue;
+          if (PL && PL.laneClosed(c.s + 60, l)) continue;
           const ld = LANE_D[l];
           const fwd = this.leader(c, ld, this.cars, player);
           const back = this.follower(c, ld, this.cars, player);

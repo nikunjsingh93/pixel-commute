@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Path } from './path.js';
+import { Planner } from './planner.js';
 import { World, ROAD_L, ROAD_R, LANE_D } from './world.js';
 import { Sky, lookAt } from './sky.js';
 import { PixelPipeline } from './pixel.js';
@@ -43,13 +44,17 @@ const camera = new THREE.PerspectiveCamera(52, 16 / 9, 0.3, 1500);
 
 const pipe = new PixelPipeline(renderer);
 const path = new Path(Number(params.get('seed') || 7));
-const world = new World(scene, path);
+const planner = new Planner(Number(params.get('seed') || 7));
+const world = new World(scene, path, planner);
 const sky = new Sky(scene);
 const glows = new Glows(scene);
 const lamps = new LightPool(scene, 10);
 const carLights = new LightPool(scene, 4);
 const traffic = new Traffic(world.root, path);
 const player = new Player(world.root, path);
+traffic.planner = planner;
+player.planner = planner;
+player.world = world;
 const weather = new Weather(scene);
 const hud = new Hud(hudCanvas);
 const audio = new Audio();
@@ -526,7 +531,7 @@ const _fwd = new THREE.Vector3();
 // lights over a crest or a dip (different road level) fade out instead of
 // producing streaks floating in the air
 let streakGround = 0;
-function streak(x, y, z, groundY, r, g, b, size) {
+function streak(x, y, z, groundY, r, g, b, size, water = false) {
   // reflection of a light on the wet road, seen from the camera
   const c = camera.position;
   const hL = y - groundY;
@@ -536,15 +541,51 @@ function streak(x, y, z, groundY, r, g, b, size) {
   const pz = c.z + (z - c.z) * t;
   const dx = px - c.x, dz = pz - c.z;
   const dist = Math.sqrt(dx * dx + dz * dz);
-  if (dist > 200 || dist < 4) return;
+  if (dist > (water ? 700 : 200) || dist < 4) return;
   // only reflections in front of the camera, and small when very close
   camera.getWorldDirection(_fwd);
   if (dx * _fwd.x + dz * _fwd.z < 0) return;
-  const k = Math.min(1, (dist - 4) / 14) * Math.max(0, 1 - Math.abs(groundY - streakGround) / 1.2);
+  const k = Math.min(1, Math.max(0, (dist - 7) / 22)) * (water ? 1 : Math.max(0, 1 - Math.abs(groundY - streakGround) / 1.2));
   if (k <= 0.01) return;
   glows.add(px, groundY + 0.06, pz, r * k, g * k, b * k, size * 2.2 * (0.4 + 0.6 * k), 1);
 }
 
+// a hit cone tumbles onto its side, flung ahead and away from the car
+const _m4 = new THREE.Matrix4(), _q4 = new THREE.Quaternion(), _ax = new THREE.Vector3();
+function knockCone(ch, k) {
+  if (!ch.coneMesh) return;
+  const fr = path.sample(k.s, {});
+  const p = path.point(k.s + 1.2 + k.hitV * 0.12, k.d + k.hitSide * (0.8 + Math.random()), 0.17);
+  _ax.set(fr.fx, 0, fr.fz);
+  _q4.setFromAxisAngle(_ax, (Math.PI / 2) * k.hitSide);
+  _m4.compose(_v1.set(p.x - ch.anchor.x, p.y - ch.anchor.y, p.z - ch.anchor.z), _q4, _v2.set(1, 1, 1));
+  ch.coneMesh.setMatrixAt(k.i, _m4);
+  ch.coneMesh.instanceMatrix.needsUpdate = true;
+}
+
+// toll barrier arms lift for whoever approaches their lane
+function updateArms(dt) {
+  for (const ch of world.allChunks()) {
+    for (const arm of ch.arms) {
+      const lc = LANE_D[arm.lane];
+      const near = (s, d) => s > arm.s - 35 && s < arm.s + 4 && Math.abs(d - lc) < 2.2;
+      let open = near(player.s, player.d);
+      if (!open) for (const c of traffic.cars) if (c.mesh.visible && near(c.s, c.d)) { open = true; break; }
+      arm.lift += ((open ? 1 : 0) - arm.lift) * Math.min(1, dt * 4);
+      arm.pivot.rotation.set(0, arm.pivot.rotation.y, -arm.lift * 1.35);
+    }
+  }
+}
+
+// 0..1: how deep inside a tunnel s is (ramps over the first/last 35 m)
+function tunnelDepth(s) {
+  const f = planner.at(s, 'tunnel', 0);
+  if (!f) return 0;
+  return Math.min(1, Math.min(s - f.s0, f.s1 - s) / 35);
+}
+
+let lastDistrict = '';
+const TUNNEL_FOG = new THREE.Color(0.06, 0.05, 0.04);
 function step(dt) {
   st.time += dt;
   const frozen = st.paused || photo.active;
@@ -566,6 +607,10 @@ function step(dt) {
       if (e.type === 'close') {
         hud.popup(e.combo > 1 ? `CLOSE CALL X${e.combo}` : 'CLOSE CALL', '#ffcd6e');
         audio.chime(e.combo);
+      } else if (e.type === 'cone') {
+        knockCone(e.chunk, e.cone);
+        audio.thump(0.12);
+        hud.popup('CONE!', '#ff8a4a');
       } else if (e.type === 'reset') {
         hud.say('BACK ON THE ROAD');
       } else if (e.type === 'hit') {
@@ -575,6 +620,12 @@ function step(dt) {
       }
     }
     player.events.length = 0;
+    updateArms(dt);
+    const dn = planner.district(player.s).name;
+    if (dn !== lastDistrict) {
+      if (lastDistrict && st.mode === 'drive') hud.say(dn);
+      lastDistrict = dn;
+    }
   }
   st.shake = Math.max(0, st.shake - dt * 2.5);
   path.trim(player.s - 400);
@@ -585,9 +636,21 @@ function render(dt) {
   world.update(player.s);
   look = sky.apply(st.hour, scene, st.time);
   const night = look.night;
-  world.setNight(night);
+  world.setNight(night, st.time);
   scene.fog.density = 0.0026 * W.fog;
-  pipe.post.uniforms.exposure.value = look.exp;
+  // inside a tunnel the sky light is shut out and the eye adapts a little
+  const tk = tunnelDepth(player.s);
+  st.tunnel = tk;
+  if (tk > 0) {
+    sky.hemi.intensity *= 1 - 0.85 * tk;
+    sky.dir.intensity *= 1 - 0.97 * tk;
+    scene.fog.color.lerp(TUNNEL_FOG, 0.7 * tk);
+  }
+  // no bright sky reflections on the tunnel's road
+  world.mRoad.envMapIntensity = world.mOpp.envMapIntensity = 0.35 * (1 - 0.9 * tk);
+  // ...and the tunnel road is dry (no glossy puddles)
+  world.mRoad.roughness = world.mOpp.roughness = (0.92 - W.wet * 0.6) * (1 - tk) + 0.9 * tk;
+  pipe.post.uniforms.exposure.value = look.exp * (1 + 0.35 * tk);
 
   player.render(o);
   maybeRebase();
@@ -606,20 +669,27 @@ function render(dt) {
   for (const g of world.allGlows()) {
     const x = g.x - world.origin.x, y = g.y - world.origin.y, z = g.z - world.origin.z;
     if (g.blink !== undefined) {
-      const on = Math.sin(st.time * 2.2 + g.blink) > 0.3;
-      if (on) glows.add(x, y, z, 1.6 * night + 0.2, 0.2, 0.12, g.size);
+      const on = Math.sin(st.time * (g.always ? 6 : 2.2) + g.blink) > 0.3;
+      if (!on) continue;
+      if (g.always) glows.add(x, y, z, g.r, g.g, g.b, g.size); // amber flashers
+      else glows.add(x, y, z, 1.6 * night + 0.2, 0.2, 0.12, g.size); // aviation lights
       continue;
     }
-    if (lampK <= 0.01) continue;
-    glows.add(x, y, z, g.r * lampK, g.g * lampK, g.b * lampK, g.size);
-    if (wet > 0.05 && g.h) streak(x, y, z, y - g.h, g.r * lampK * wet * 0.7, g.g * lampK * wet * 0.7, g.b * lampK * wet * 0.7, g.size * 1.1);
+    // feature lights (tunnels, booths) are on day and night
+    const k = g.always ? Math.max(lampK, 1) : lampK;
+    if (k <= 0.01) continue;
+    glows.add(x, y, z, g.r * k, g.g * k, g.b * k, g.size);
+    if (g.wy !== undefined) streak(x, y, z, g.wy - world.origin.y, g.r * k * 0.6, g.g * k * 0.6, g.b * k * 0.6, g.size * 1.6, true);
+    else if (wet > 0.05 && g.h) streak(x, y, z, y - g.h, g.r * k * wet * 0.7, g.g * k * wet * 0.7, g.b * k * wet * 0.7, g.size * 1.1);
   }
   for (const l of world.allLights()) {
-    lampCands.push({ x: l.x - world.origin.x, y: l.y - world.origin.y, z: l.z - world.origin.z, r: l.r, g: l.g, b: l.b, power: l.power, range: 30 });
+    const k = l.always ? Math.max(lampK, 1) : lampK;
+    if (k <= 0.01) continue;
+    lampCands.push({ x: l.x - world.origin.x, y: l.y - world.origin.y, z: l.z - world.origin.z, r: l.r, g: l.g, b: l.b, power: l.power * k, range: 30 });
   }
   const fx = Math.sin(carNow.h), fz = Math.cos(carNow.h);
   const focus = { x: carNow.x + fx * 30, y: carNow.y, z: carNow.z + fz * 30 };
-  lamps.assign(lampCands, focus, 55 * lampK);
+  lamps.assign(lampCands, focus, 55);
 
   traffic.render(world.origin, glows, wet, Math.max(0.35, night), st.time, streak);
   // nearest traffic tail lights get real red lights (wet-road shine)
@@ -661,6 +731,7 @@ function render(dt) {
   glows.mat.uniforms.fogDensity.value = scene.fog.density * 0.85;
 
   // weather
+  weather.amountScale = 1 - tk;
   weather.update(dt, camera, { x: fx * player.v, z: fz * player.v }, st.time, st.h, 0.5 + 0.6 * (1 - night) + night * 0.55,
     CAMS[st.cam] === 'COCKPIT' ? 2.6 : 0);
 
@@ -704,7 +775,7 @@ if (!HOLD) requestAnimationFrame(loop);
 
 // ------------------------------------------------------------------ dev hooks
 window.__game = {
-  st, player, traffic, world, camera, pipe, sky, renderer, photo, enterPhoto, exitPhoto, pauseMenu,
+  st, player, traffic, world, planner, camera, pipe, sky, renderer, photo, enterPhoto, exitPhoto, pauseMenu,
   advance(sec, fps = 30) {
     const dt = 1 / fps;
     for (let t = 0; t < sec; t += dt) {

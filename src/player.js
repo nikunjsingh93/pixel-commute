@@ -148,6 +148,7 @@ export class Player {
     this.scrape = Math.max(0, this.scrape - dt * 3);
     this.barriers();
     this.collideTraffic(traffic);
+    this.collideStatic();
 
     const tb = V.brake > 0.1 || (V.gear < 0 && V.throttle > 0.1) ? 1 : 0;
     this.brake += (tb - this.brake) * Math.min(1, dt * 12);
@@ -233,65 +234,101 @@ export class Player {
         c.passed = false;
       }
       if (Math.abs(dsr) > 14 || Math.abs(c.d - this.d) > 4.5) continue;
-
-      // traffic car box (absolute world coordinates)
-      const p = this.path.sample(c.s, cf);
-      const hc = p.h + (c.yaw || 0);
-      const fx = Math.sin(hc), fz = Math.cos(hc);
-      const rx = -Math.cos(hc), rz = Math.sin(hc);
-      const cx = p.x + p.rx * c.d, cz = p.z + p.rz * c.d;
-      const cL = c.L / 2, cW = c.W / 2;
-      const M = MASS[c.type] || 1500;
-      const vcx = fx * c.v, vcz = fz * c.v;
-      let worst = 0;
-
-      // n points from the traffic car toward the player
-      const resolve = (px, pz, nx, nz, pen) => {
-        V.pos.x += nx * pen * 0.9;
-        V.pos.z += nz * pen * 0.9;
-        P.set(px, V.pos.y - 0.2, pz);
-        n.set(nx, 0, nz);
-        V.pointVel(P, vp);
-        const vrn = (vp.x - vcx) * nx + (vp.z - vcz) * nz;
-        if (vrn < 0) {
-          const j = (-1.2 * vrn) / (V.invMassAt(P, n) + 1 / M);
-          V.applyImpulse(P, n, j);
-          // and push the traffic car the other way
-          const dvx = (-nx * j) / M, dvz = (-nz * j) / M;
-          c.v = Math.max(0, c.v + dvx * fx + dvz * fz);
-          c.d += (dvx * rx + dvz * rz) * 0.25;
-          worst = Math.max(worst, -vrn);
-        }
-      };
-
-      // player corners inside the traffic car
-      for (let i = 0; i < 4; i++) {
-        this.corner(i, P);
-        const ux = P.x - cx, uz = P.z - cz;
-        const u = ux * fx + uz * fz, w = ux * rx + uz * rz;
-        if (Math.abs(u) >= cL || Math.abs(w) >= cW) continue;
-        const pu = cL - Math.abs(u), pw = cW - Math.abs(w);
-        if (pu < pw) resolve(P.x, P.z, fx * Math.sign(u), fz * Math.sign(u), pu);
-        else resolve(P.x, P.z, rx * Math.sign(w), rz * Math.sign(w), pw);
-      }
-      // traffic car corners inside the player
-      for (let i = 0; i < 4; i++) {
-        const su = i & 1 ? 1 : -1, sw = i & 2 ? 1 : -1;
-        const qx = cx + fx * cL * su + rx * cW * sw;
-        const qz = cz + fz * cL * su + rz * cW * sw;
-        const ux = qx - V.pos.x, uz = qz - V.pos.z;
-        const u = ux * pfx + uz * pfz, w = ux * prx + uz * prz;
-        if (Math.abs(u) >= hL || Math.abs(w) >= hW) continue;
-        const pu = hL - Math.abs(u), pw = hW - Math.abs(w);
-        // move the player away from the corner along its nearest face normal
-        if (pu < pw) resolve(qx, qz, -pfx * Math.sign(u), -pfz * Math.sign(u), pu);
-        else resolve(qx, qz, -prx * Math.sign(w), -prz * Math.sign(w), pw);
-      }
+      const worst = this.collideBox(c, MASS[c.type] || 1500, true);
       if (worst > 0.6) {
         this.hit(worst / 9, 'car');
         this.combo = 0;
       }
     }
+  }
+
+  // toll islands (solid) and roadworks cones (knocked flying)
+  collideStatic() {
+    const W = this.world;
+    if (!W) return;
+    for (const ob of W.allObstacles()) {
+      if (Math.abs(ob.s - this.s) > ob.L / 2 + 6 || Math.abs(ob.d - this.d) > ob.W / 2 + 4) continue;
+      const worst = this.collideBox(ob, 1e12, false);
+      if (worst > 0.6) this.hit(worst / 9, 'wall');
+    }
+    for (const ch of W.allChunks()) {
+      if (!ch.cones.length || ch.s0 > this.s + 40 || ch.s0 + 64 < this.s - 40) continue;
+      for (const k of ch.cones) {
+        if (k.knocked) continue;
+        if (Math.abs(k.s - this.s) < this.L / 2 + 0.2 && Math.abs(k.d - this.d) < this.W / 2 + 0.2) {
+          k.knocked = true;
+          k.hitV = Math.max(this.v, 3);
+          k.hitSide = Math.sign(k.d - this.d) || 1;
+          this.veh.vel.multiplyScalar(0.99);
+          this.events.push({ type: 'cone', cone: k, chunk: ch });
+        }
+      }
+    }
+  }
+
+  // oriented-box contact between the player and a road-space box c
+  // ({s, d, L, W, yaw?, v?}). M = its mass; push = also shove it.
+  // Returns the worst approach speed (for bump sounds).
+  collideBox(c, M, push) {
+    const V = this.veh, P = this._p, n = this._n, vp = this._vp;
+    let fl = Math.hypot(V.fwd.x, V.fwd.z) || 1;
+    const pfx = V.fwd.x / fl, pfz = V.fwd.z / fl;
+    fl = Math.hypot(V.right.x, V.right.z) || 1;
+    const prx = V.right.x / fl, prz = V.right.z / fl;
+    const hL = this.L / 2, hW = this.W / 2;
+    const p = this.path.sample(c.s, this._cf);
+    const hc = p.h + (c.yaw || 0);
+    const fx = Math.sin(hc), fz = Math.cos(hc);
+    const rx = -Math.cos(hc), rz = Math.sin(hc);
+    const cx = p.x + p.rx * c.d, cz = p.z + p.rz * c.d;
+    const cL = c.L / 2, cW = c.W / 2;
+    const cv = c.v || 0;
+    const vcx = fx * cv, vcz = fz * cv;
+    let worst = 0;
+
+    // n points from the box toward the player
+    const resolve = (px, pz, nx, nz, pen) => {
+      V.pos.x += nx * pen * 0.9;
+      V.pos.z += nz * pen * 0.9;
+      P.set(px, V.pos.y - 0.2, pz);
+      n.set(nx, 0, nz);
+      V.pointVel(P, vp);
+      const vrn = (vp.x - vcx) * nx + (vp.z - vcz) * nz;
+      if (vrn < 0) {
+        const j = (-1.2 * vrn) / (V.invMassAt(P, n) + 1 / M);
+        V.applyImpulse(P, n, j);
+        if (push) {
+          const dvx = (-nx * j) / M, dvz = (-nz * j) / M;
+          c.v = Math.max(0, c.v + dvx * fx + dvz * fz);
+          c.d += (dvx * rx + dvz * rz) * 0.25;
+        }
+        worst = Math.max(worst, -vrn);
+      }
+    };
+
+    // player corners inside the box
+    for (let i = 0; i < 4; i++) {
+      this.corner(i, P);
+      const ux = P.x - cx, uz = P.z - cz;
+      const u = ux * fx + uz * fz, w = ux * rx + uz * rz;
+      if (Math.abs(u) >= cL || Math.abs(w) >= cW) continue;
+      const pu = cL - Math.abs(u), pw = cW - Math.abs(w);
+      if (pu < pw) resolve(P.x, P.z, fx * Math.sign(u), fz * Math.sign(u), pu);
+      else resolve(P.x, P.z, rx * Math.sign(w), rz * Math.sign(w), pw);
+    }
+    // box corners inside the player
+    for (let i = 0; i < 4; i++) {
+      const su = i & 1 ? 1 : -1, sw = i & 2 ? 1 : -1;
+      const qx = cx + fx * cL * su + rx * cW * sw;
+      const qz = cz + fz * cL * su + rz * cW * sw;
+      const ux = qx - V.pos.x, uz = qz - V.pos.z;
+      const u = ux * pfx + uz * pfz, w = ux * prx + uz * prz;
+      if (Math.abs(u) >= hL || Math.abs(w) >= hW) continue;
+      const pu = hL - Math.abs(u), pw = hW - Math.abs(w);
+      if (pu < pw) resolve(qx, qz, -pfx * Math.sign(u), -pfz * Math.sign(u), pu);
+      else resolve(qx, qz, -prx * Math.sign(w), -prz * Math.sign(w), pw);
+    }
+    return worst;
   }
 
   hit(power, kind) {
@@ -303,7 +340,9 @@ export class Player {
   // pure pursuit on the chosen lane + IDM speed keeping
   autopilot(dt, traffic) {
     const V = this.veh;
-    const cruise = 27;
+    const PL = this.planner;
+    const cruise = PL && PL.at(this.s + 90, 'toll', 60) ? 12 : 27;
+    if (PL && PL.laneClosed(this.s + 150, this.autoLane)) this.autoLane = Math.max(0, this.autoLane - 1);
     const laneD = LANE_D[this.autoLane];
     const lead = traffic.leader(this, laneD, traffic.cars, null);
     const vLead = lead.o ? lead.o.v : cruise;
@@ -318,6 +357,7 @@ export class Player {
       this.autoCool = 4;
       for (const l of [this.autoLane - 1, this.autoLane + 1]) {
         if (l < 0 || l > 3) continue;
+        if (PL && (PL.laneClosed(this.s + 150, l) || PL.noLaneChange(this.s + 60))) continue;
         const f = traffic.leader(this, LANE_D[l], traffic.cars, null);
         const b = traffic.follower(this, LANE_D[l], traffic.cars, null);
         if (f.gap > lead.gap + 15 && b.gap > 14) {
