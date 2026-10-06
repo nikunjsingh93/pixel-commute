@@ -305,8 +305,10 @@ function runAction(k) {
       break;
     case 'KeyF':
       // on foot <-> in a car; on foot it is the action key (cars, metro, cable car)
-      if (foot.active) foot.action();
-      else foot.leaveCar();
+      if (foot.active) {
+        foot.action();
+        if (!foot.active) releaseMouse();
+      } else if (foot.leaveCar()) captureMouse();
       break;
     case 'KeyRun':
       foot.run = !foot.run;
@@ -622,7 +624,15 @@ window.addEventListener('mousemove', (e) => {
   if (foot.active) foot.look(e.movementX, e.movementY);
   else lookBy(e.movementX, e.movementY);
 });
-// on foot with a mouse: click to capture it for free looking (Esc releases)
+// on foot with a mouse: the mouse is captured so you can turn all the way
+// round (pointer lock; Esc releases it, a click takes it back)
+function captureMouse() {
+  if (st.touch || document.pointerLockElement === glCanvas || !glCanvas.requestPointerLock) return;
+  try { const p = glCanvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (err) { /* needs a user gesture */ }
+}
+function releaseMouse() {
+  if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+}
 window.addEventListener('pointerdown', (e) => {
   if (e.pointerType !== 'mouse' || !foot || !foot.active || !lookAllowed() || st.touch) return;
   if (e.target.closest && e.target.closest('.pb, .ui-panel, .ui-menu')) return;
@@ -1018,7 +1028,7 @@ function render(dt) {
 
   pipe.render(scene, camera);
   hud.draw({
-    onFoot: foot.active, prompt: foot.active ? (st.touch ? foot.prompt.replace(/^F  /, 'ACT  ').replace('(F LEAVE)', '(ACT LEAVE)').replace(/· F /g, '· ACT ') : foot.prompt) : '',
+    onFoot: foot.active, prompt: foot.active && !st.touch && !foot.prompt && !st.paused && document.pointerLockElement !== glCanvas ? 'CLICK TO LOOK AROUND' : foot.active ? (st.touch ? foot.prompt.replace(/^F  /, 'ACT  ').replace('(F LEAVE)', '(ACT LEAVE)').replace(/· F /g, '· ACT ') : foot.prompt) : '',
     mode: st.mode, hour: st.hour, period: look.name, weather: W.name, odo: player.odo, closeCalls: player.closeCalls,
     speed: player.v, vmax: VMAX, auto: player.auto, music: audio.ctx && audio.music, stationName: radio.label(),
     commute: st.mode === 'drive' ? commute.hudState() : null,
@@ -1035,7 +1045,7 @@ function render(dt) {
 // prime the world
 updateFocus();
 world.update(player.s, true);
-traffic.init(player.s);
+traffic.init(player.s, 30, 16, player.d);
 // compile every shader up front (rain, snow, night lights...) so the first
 // weather / time change does not stall a phone while it compiles
 weather.snow.visible = weather.rain.visible = true;
@@ -1048,9 +1058,10 @@ try {
 
 let last = performance.now();
 function loop(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
+  // (the first frame's timestamp can be older than 'last': never step backwards)
+  const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
   last = now;
-  step(dt);
+  if (dt > 0) step(dt);
   render(dt);
   requestAnimationFrame(loop);
 }

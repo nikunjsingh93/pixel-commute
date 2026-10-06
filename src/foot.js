@@ -84,6 +84,14 @@ export class Foot {
     for (const n of W.nets.values()) for (const c of n.cars) if (Math.abs(c.s - this.s) < 14) roadBox(c, n.city ? 'city' : 'exit');
     for (const c of T.cars) if (c.mesh.visible && Math.abs(c.s - this.s) < 14) roadBox(c, 'traffic');
     for (const c of W.parked || []) if (Math.abs(c.s - this.s) < 14) roadBox(c, 'parked');
+    // parked cars in a city's parking bays
+    for (const n of W.nets.values()) {
+      if (!n.tiles) continue;
+      for (const t of n.tiles.values()) {
+        if (!t.built || !t.parked) continue;
+        for (const c of t.parked) if (Math.abs(c.s - this.s) < 14) roadBox(c, 'cityParked');
+      }
+    }
     out.sort((a, b) => a.dist - b.dist);
     return out;
   }
@@ -130,6 +138,15 @@ export class Foot {
 
   removeNpc(hit) {
     const c = hit.c, W = this.g.world;
+    if (hit.kind === 'cityParked') {
+      const t = c.tile, net = c.net;
+      if (c.mesh.parent) c.mesh.parent.remove(c.mesh);
+      t.parked.splice(t.parked.indexOf(c), 1);
+      const i = t.obstacles.indexOf(c.ob);
+      if (i >= 0) t.obstacles.splice(i, 1);
+      net.collect();
+      return;
+    }
     if (hit.kind === 'city' || hit.kind === 'exit') {
       for (const n of W.nets.values()) {
         const i = n.cars.indexOf(c);

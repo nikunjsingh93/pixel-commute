@@ -58,7 +58,8 @@ P.buildRamps = function buildRamps(G, glows) {
   for (const r of [lay.offRamp, lay.onRamp]) {
     const pts = resample(this.rampPts(r), 4).map(([u, v]) => [u, v]);
     const hAt = (p) => this.rampH(r, p[0]) + 0.05;
-    ribbon(raw.street, this, pts, lay.RAMP_HW * 2, (i, p) => hAt(p), 8);
+    // one-way ramp surface (white edge lines, no centre line)
+    ribbon(raw.ramp, this, pts, lay.RAMP_HW * 2, (i, p) => hAt(p), 8);
     // walls on both sides where the ramp is up in the air, and the deck
     // under it (fascia down to a soffit 1.1 m below the surface)
     for (let i = 0; i < pts.length - 1; i++) {
@@ -74,14 +75,20 @@ P.buildRamps = function buildRamps(G, glows) {
         // the aux-lane end joins the deck: no wall on the deck side there
         const onDeck = (aV + bV) / 2 < 19.9 && side * nv < 0;
         if (!onDeck) {
-          // parapet (above the surface) + fascia (below it)
-          const pa = [net(this, aU, aV, ha), net(this, bU, bV, hb)];
-          const qa = (h0a, h1a, h0b, h1b) => {
-            const Pq = [this.wp(aU, aV, h0a), this.wp(bU, bV, h0b), this.wp(bU, bV, h1b), this.wp(aU, aV, h1a)];
-            raw.bridge.quadOut(Pq, null, this.wp(inner[0], inner[1], (h0a + h1a) / 2));
-          };
-          void pa;
-          qa(Math.max(0, ha - 1.1), ha + 1.0, Math.max(0, hb - 1.1), hb + 1.0);
+          // concrete parapet: outer face (with the fascia below the deck),
+          // inner face toward the road, a flat top, and a steel rail on it
+          const wi = w - 0.3;
+          const iU = ua + nu * wi * side, iV = va + nv * wi * side, jU = ub + nu * wi * side, jV = vb + nv * wi * side;
+          const away = [aU + nu * side * 3, aV + nv * side * 3];
+          const quad = (g, P4, insideUV, h) => g.quadOut(P4, null, this.wp(insideUV[0], insideUV[1], h));
+          quad(raw.bridge, [this.wp(aU, aV, Math.max(0, ha - 1.1)), this.wp(bU, bV, Math.max(0, hb - 1.1)), this.wp(bU, bV, hb + 0.95), this.wp(aU, aV, ha + 0.95)], inner, ha);
+          quad(raw.bridge, [this.wp(iU, iV, ha), this.wp(jU, jV, hb), this.wp(jU, jV, hb + 0.95), this.wp(iU, iV, ha + 0.95)], away, ha);
+          quad(raw.bridge, [this.wp(aU, aV, ha + 0.95), this.wp(bU, bV, hb + 0.95), this.wp(jU, jV, hb + 0.95), this.wp(iU, iV, ha + 0.95)], [inner[0], inner[1]], ha - 5);
+          const rU = ua + nu * (w - 0.15) * side, rV = va + nv * (w - 0.15) * side, sU = ub + nu * (w - 0.15) * side, sV = vb + nv * (w - 0.15) * side;
+          for (const fh of [1.22, 1.3]) {
+            quad(raw.metal, [this.wp(rU - nu * 0.06, rV - nv * 0.06, ha + fh), this.wp(sU - nu * 0.06, sV - nv * 0.06, hb + fh), this.wp(sU + nu * 0.06, sV + nv * 0.06, hb + fh), this.wp(rU + nu * 0.06, rV + nv * 0.06, ha + fh)], inner, ha - 5);
+          }
+          if (i % 2 === 0) lbox(raw.metal, this, rU, rV, ha + 0.95, 0.1, 0.1, 0.35);
         }
       }
       // soffit
@@ -101,7 +108,7 @@ P.buildRamps = function buildRamps(G, glows) {
     const yA = (u) => this.deck(u) + 0.01;
     const pts = [];
     for (let u = a0; u <= a1 + 0.01; u += 4) pts.push([u, 18.2]);
-    ribbon(raw.street, this, pts, 3.2, (i, p) => yA(p[0]), 8);
+    ribbon(raw.ramp, this, pts, 3.2, (i, p) => yA(p[0]), 8);
     // parapet on the outside, except where the ramp leaves / joins
     const mouth = a0 < lay.offRamp.uTop + 10 && a1 > lay.offRamp.uTop - 10 ? [lay.offRamp.u0, lay.offRamp.uTop + 8] : [lay.onRamp.uTop - 8, lay.onRamp.u1];
     for (let u = a0; u < a1; u += 4) {
@@ -669,5 +676,12 @@ P.parkedCar = function parkedCar(t, u, v, r, obstacles) {
   car.group.rotation.y = Math.atan2(this.F.x, this.F.z) + (r < 0.5 ? 0 : Math.PI);
   car.group.traverse((o) => { if (o.isMesh) o.userData.shared = true; });
   (t.extraMeshes = t.extraMeshes || []).push(car.group);
-  obstacles.push({ s: this.S + u, d: v, L: car.dims.L, W: car.dims.W, y0: this.base - 1, y1: this.base + 1.6, layer: 'city', kind: 'car' });
+  const ob = { s: this.S + u, d: v, L: car.dims.L, W: car.dims.W, y0: this.base - 1, y1: this.base + 1.6, layer: 'city', kind: 'car' };
+  obstacles.push(ob);
+  // a car you can get into (on foot)
+  const ps = this.W.path.sample(this.S + u, {});
+  (t.parked = t.parked || []).push({
+    s: this.S + u, d: v, L: car.dims.L, W: car.dims.W, yaw: car.group.rotation.y - ps.h, y: this.base,
+    type, color, mesh: car.group, ob, tile: t, net: this,
+  });
 };

@@ -33,8 +33,8 @@ export function setupTouch(game) {
   drive.push(button(root, '', '<span>Brake</span>', { width: K, height: K, right: `calc(${br} + ${G} + 14px)`, bottom: bb }, ...hold('KeyS')));
   const HB = 'clamp(56px, 14vmin, 84px)';
   drive.push(button(root, 'small', '<span>Hand</span><span>brake</span>', { width: HB, height: HB, right: br, bottom: `calc(${bb} + ${G} + 14px)` }, ...hold('ShiftLeft')));
-  // get out of the car: beside the handbrake, above the brake
-  const door = button(root, 'small', '<span>Exit</span><span>car</span>', { width: HB, height: HB, right: `calc(${br} + ${G} + 14px)`, bottom: `calc(${bb} + ${G} + 14px)` }, () => game.press('KeyF'));
+  // get out of the car: directly above the handbrake
+  const door = button(root, 'small', '<span>Exit</span><span>car</span>', { width: HB, height: HB, right: br, bottom: `calc(${bb} + ${G} + ${HB} + 26px)` }, () => game.press('KeyF'));
 
   // on foot: a move stick (bottom-left), act + run (bottom-right)
   const foot = [];

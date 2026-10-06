@@ -518,6 +518,7 @@ export class CityNet {
     t.group = null;
     t.built = false;
     t.extraMeshes = [];
+    t.parked = [];
     t.wires = [];
     t.glows = [];
     t.lights = [];
@@ -531,7 +532,7 @@ export class CityNet {
       ground: new G(), grass: new G(), pave: new G(), kerb: new G(), asphalt: new G(), ave1: new G(), ave2: new G(), ave3: new G(),
       metal: new G(), lamp: new G(), dark: new G(), colored: new G(), leaf: new G(), building: new G(), shop: new G(),
       roof: new G(), rail: new G(), concrete: new G(), bridge: new G(), tkFacade: new G(), tkShop: new G(), tkSign: new G(), leafTk: new G(),
-      terrain: new G(), train: new G(), lattice: new G(), screen: new G(), bigSign: new G(), water: new G(), street: new G(), house: new G(),
+      terrain: new G(), train: new G(), lattice: new G(), screen: new G(), bigSign: new G(), water: new G(), street: new G(), house: new G(), ramp: new G(),
     };
     raw.colored.col = '#888888';
     raw.leaf.col = '#2f5a42';
@@ -562,6 +563,7 @@ export class CityNet {
     add(raw.ground, W.mGround); add(raw.grass, W.mGrass); add(raw.pave, W.mPave); add(raw.kerb, W.mConcrete);
     add(raw.asphalt, m.asphalt); add(raw.ave1, m.ave[1]); add(raw.ave2, m.ave[2]); add(raw.ave3, m.ave[3]);
     add(raw.street, W.mStreet);
+    add(raw.ramp, W.mRamp);
     add(raw.metal, W.mMetal); add(raw.lamp, W.mLamp); add(raw.dark, W.mDark); add(raw.colored, W.mColored);
     add(raw.leaf, W.mLeaf); add(raw.building, W.mBuilding); add(raw.shop, W.mShop); add(raw.roof, W.mRoof);
     add(raw.house, W.mHouse); add(raw.rail, W.mRail); add(raw.concrete, W.mConcrete); add(raw.bridge, W.mBridge);

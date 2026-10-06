@@ -37,7 +37,9 @@ export class Traffic {
     };
   }
 
-  init(playerS, n = 30, nOpp = 16) {
+  init(playerS, n = 30, nOpp = 16, playerD = 5.4) {
+    // keep clear of the player from the start (nothing spawns on top of the car)
+    this.player = this.player || { s: playerS, d: playerD, v: 0, L: 5, W: 2 };
     for (let i = 0; i < n; i++) {
       const c = this.makeVehicle(1);
       this.cars.push(c);

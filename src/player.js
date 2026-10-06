@@ -109,9 +109,11 @@ export class Player {
     if (model === 'truck' || model === 'bus') {
       const k = t.L / 5.3;
       spec = {
-        ...spec, wheelbase: t.L * 0.58, track: t.W - 0.3, mass: 2350 * k * 1.4, comH: 1.05,
-        inertia: spec.inertia.clone().multiplyScalar(k * k * 1.6), maxTorque: 430 * k, brakeTorque: 4400 * k,
-        kF: 52000 * k, kR: 62000 * k, cBump: 4200 * k, cReb: 6200 * k, radius: 0.5,
+        // big wheels: the suspension reaches further (mounts sit higher), and
+        // each wheel may carry more load
+        ...spec, wheelbase: t.L * 0.58, track: t.W - 0.3, mass: 5200, comH: 1.05, rayLen: 0.62 + (0.5 - 0.33), fzMax: 32000,
+        inertia: spec.inertia.clone().multiplyScalar(k * 1.8), maxTorque: 430 * k, brakeTorque: 4400 * k, wheelInertia: 4,
+        kF: 52000 * k, kR: 62000 * k, cBump: 4200 * k, cReb: 6200 * k, radius: 0.5, steerK: 0.75, assistK: 0.6,
       };
       spec.hull = specFor(def, { L: t.L, W: t.W, H: t.H }).hull.map(([x, y, z]) => [x, y + 0.85 - 1.05, z]);
     }

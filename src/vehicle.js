@@ -137,6 +137,7 @@ export class Vehicle {
   }
 
   step(dt, sub = 3) {
+    if (!(dt > 0)) return;
     const h = dt / sub;
     this._lastVel.copy(this.vel);
     for (let i = 0; i < sub; i++) this._sub(h);
@@ -230,7 +231,7 @@ export class Vehicle {
       let f = wh.k * comp + (vComp > 0 ? S.cBump : S.cReb) * vComp + wh.arb * (comp - other.comp);
       if (comp > S.maxComp) f += 60000 * (comp - S.maxComp);
       if (f < 0) f = 0;
-      f = Math.min(f, 18000) * Math.min(1, Math.max(0, (up.y - 0.25) * 3));
+      f = Math.min(f, S.fzMax || 18000) * Math.min(1, Math.max(0, (up.y - 0.25) * 3));
       wh.fz = f;
       cp.copy(org).addScaledVector(up, -t0);
       this.groundNormal(cp.x, cp.z, wh.normal);
