@@ -319,10 +319,13 @@ export class World {
   }
 
   // gable roof (ridge along s) on a box of size along x across at height y0
-  roof(geo, s, d, y0, along, across, rh, a) {
+  roof(geo, s, d, y0, along, across, rh, a, yaw = 0) {
     const f = this.path.sample(s, {});
+    const c = Math.cos(yaw), sn = Math.sin(yaw);
+    const fx = f.fx * c + f.rx * sn, fz = f.fz * c + f.rz * sn;
+    const rx = f.rx * c - f.fx * sn, rz = f.rz * c - f.fz * sn;
     const cx = f.x + f.rx * d - a.x, cz = f.z + f.rz * d - a.z, cy = f.y + y0 - a.y;
-    const P = (i, j, k) => [cx + f.fx * along * 0.5 * i + f.rx * across * 0.5 * j, cy + rh * k, cz + f.fz * along * 0.5 * i + f.rz * across * 0.5 * j];
+    const P = (i, j, k) => [cx + fx * along * 0.5 * i + rx * across * 0.5 * j, cy + rh * k, cz + fz * along * 0.5 * i + rz * across * 0.5 * j];
     const inside = [cx, cy + rh * 0.3, cz];
     geo.quadOut([P(-1, -1.06, 0), P(1, -1.06, 0), P(1, 0, 1), P(-1, 0, 1)], null, inside);
     geo.quadOut([P(-1, 1.06, 0), P(1, 1.06, 0), P(1, 0, 1), P(-1, 0, 1)], null, inside);
@@ -675,8 +678,9 @@ export class World {
       const s = s0 + 20;
       this.obox(geo.metal, s, GUARD_R + 0.6, 0.16, 0.3, 0.3, 7.6, anchor);
       this.obox(geo.metal, s, 11.8, 7.0, 0.2, 11.8, 0.25, anchor);
-      this.obox(geo.dark, s + 0.12, 11.6, 5.3, 0.12, 5.2, 2.6, anchor);
-      signs.push({ s: s - 0.02, d: 11.6, y: 5.3, w: 5.2, h: 2.6, mat: this.mSigns[ci % this.mSigns.length] });
+      // board in front of the beam, its right edge by the post
+      this.obox(geo.dark, s - 0.18, 14.95, 5.3, 0.12, 5.4, 2.8, anchor);
+      signs.push({ s: s - 0.26, d: 14.95, y: 5.4, w: 5.2, h: 2.6, mat: this.mSigns[ci % this.mSigns.length] });
     }
     // exit signs: 1 km gantry, 250 m gantry, and the gore sign at the split
     for (const f of P.range(s0, s1 + 1100, 'exit')) {
@@ -685,8 +689,8 @@ export class World {
         if (s < s0 || s >= s1 || P.mask(s, 30) > 0 && !P.at(s, 'exit', 0)) continue;
         this.obox(geo.metal, s, GUARD_R + 0.6, 0.16, 0.3, 0.3, 7.6, anchor);
         this.obox(geo.metal, s, 11.8, 7.0, 0.2, 11.8, 0.25, anchor);
-        this.obox(geo.dark, s + 0.12, 12.6, 5.3, 0.12, 5.6, 2.8, anchor);
-        signs.push({ s: s - 0.02, d: 12.6, y: 5.3, w: 5.6, h: 2.8, mat: this.exitSign(f.no + key, lines) });
+        this.obox(geo.dark, s - 0.18, 14.8, 5.3, 0.12, 5.8, 3.0, anchor);
+        signs.push({ s: s - 0.26, d: 14.8, y: 5.4, w: 5.6, h: 2.8, mat: this.exitSign(f.no + key, lines) });
       }
       // (the gore sign at the split is built with the exit, see exits.js)
     }
@@ -1039,14 +1043,17 @@ export class World {
     geo.quadOut([P(-1, 0), P(1, 0), P(1, 1), P(-1, 1)], [[u0, 0], [u1, 0], [u1, 1], [u0, 1]], inside);
   }
 
-  boxBuilding(geo, s, d, y0, along, across, h, a, uOff, vOff) {
+  boxBuilding(geo, s, d, y0, along, across, h, a, uOff, vOff, yaw = 0) {
     // world-scaled UVs: one window cell = 3 m wide x 3.2 m tall, 16 cells per texture
     const f = this.path.sample(s, {});
+    const c = Math.cos(yaw), sn = Math.sin(yaw);
+    const fx = f.fx * c + f.rx * sn, fz = f.fz * c + f.rz * sn;
+    const rx = f.rx * c - f.fx * sn, rz = f.rz * c - f.fz * sn;
     const cx = f.x + f.rx * d - a.x, cz = f.z + f.rz * d - a.z, cy = f.y + y0 - a.y;
     const P = (i, j, k) => [
-      cx + f.fx * along * 0.5 * i + f.rx * across * 0.5 * j,
+      cx + fx * along * 0.5 * i + rx * across * 0.5 * j,
       cy + h * k,
-      cz + f.fz * along * 0.5 * i + f.rz * across * 0.5 * j,
+      cz + fz * along * 0.5 * i + rz * across * 0.5 * j,
     ];
     const inside = [cx, cy + h / 2, cz];
     const U = (m) => m / 48;

@@ -147,7 +147,10 @@ export class Vehicle {
 
   // W/S style input with automatic reverse
   drive(accelKey, brakeKey, steer, handbrake) {
-    if (this.gear >= 1) {
+    if (this.manual) {
+      // pedals do what they say; the gear lever decides the direction
+      this.throttle = accelKey; this.brake = brakeKey;
+    } else if (this.gear >= 1) {
       this.throttle = accelKey; this.brake = brakeKey;
       if (brakeKey > 0.1 && accelKey < 0.1 && this.fwdSpeed < 0.6 && this.onGround >= 2) this.gear = -1;
     } else {
@@ -442,9 +445,21 @@ export class Vehicle {
     return Math.max(t, 0);
   }
 
+  // manual gearbox: -1 = R, 0 = N, 1..n; any gear at any time (the rev limiter protects the engine)
+  setGear(g) {
+    if (!this.manual) return false;
+    g = Math.max(-1, Math.min(this.spec.gears.length, g | 0));
+    if (g === this.gear) return false;
+    this.gear = g;
+    this.shiftTimer = 0.15;
+    return true;
+  }
+  shiftUp() { return this.setGear(this.gear + 1); }
+  shiftDown() { return this.setGear(this.gear - 1); }
+
   _gearbox() {
     const S = this.spec;
-    if (this.gear < 1 || this.shiftTimer > 0) return;
+    if (this.manual || this.gear < 1 || this.shiftTimer > 0) return;
     const rearOmega = Math.abs(this.fwdSpeed) / S.radius;
     // shift points scale with the engine (a diesel van revs far lower than the coupe)
     const upRpm = S.redline * (0.41 + 0.47 * this.throttle * this.throttle);

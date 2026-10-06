@@ -384,6 +384,57 @@ export class Tokyo {
     this.c = c;
     this.R = R;
     this.k = 1000;
+    this.setFrame();
+  }
+
+  // Builders work in a street frame (a along the street, b across it). By
+  // default that is the road frame itself (a = s, b = d); setFrame turns it by
+  // rot (radians, in the s-d plane) about (s0, d0), e.g. for side streets.
+  setFrame(s0 = 0, d0 = 0, rot = 0) {
+    this.fs = s0;
+    this.fd = d0;
+    this.rot = rot;
+    this.ca = Math.cos(rot);
+    this.sa = Math.sin(rot);
+    return this;
+  }
+  map(a, b) {
+    return [this.fs + a * this.ca - b * this.sa, this.fd + a * this.sa + b * this.ca];
+  }
+  // like path.sample, for the street frame at (a, b = 0)
+  frame(a) {
+    const [s, d] = this.map(a, 0);
+    const p = this.W.path.sample(s, {});
+    const ca = this.ca, sa = this.sa;
+    return {
+      x: p.x + p.rx * d, y: p.y, z: p.z + p.rz * d,
+      fx: p.fx * ca + p.rx * sa, fz: p.fz * ca + p.rz * sa,
+      rx: -p.fx * sa + p.rx * ca, rz: -p.fz * sa + p.rz * ca,
+      s: a,
+    };
+  }
+  point(a, b, y) {
+    const [s, d] = this.map(a, b);
+    return this.W.path.point(s, d, y);
+  }
+  // a solid footprint (axis-aligned in road space; quarter turns swap the sides)
+  foot(a, b, along, across) {
+    if (!this.c.foot) return;
+    const [s, d] = this.map(a, b);
+    const q = Math.abs(this.sa) > 0.7;
+    this.c.foot(s, d, q ? across : along, q ? along : across);
+  }
+  box(geo, a, b, y0, along, across, h, A, yaw = 0, uv = 0) {
+    const [s, d] = this.map(a, b);
+    this.W.obox(geo, s, d, y0, along, across, h, A, yaw + this.rot, uv);
+  }
+  roof(geo, a, b, y0, along, across, rh, A) {
+    const [s, d] = this.map(a, b);
+    this.W.roof(geo, s, d, y0, along, across, rh, A, this.rot);
+  }
+  boxBuilding(geo, a, b, y0, along, across, h, A, uOff, vOff) {
+    const [s, d] = this.map(a, b);
+    this.W.boxBuilding(geo, s, d, y0, along, across, h, A, uOff, vOff, this.rot);
   }
   r() {
     return this.R(this.k++);
@@ -418,14 +469,14 @@ export class Tokyo {
   // road, -1 left. front: d of the street face. Returns nothing.
   shopHouse(sm, along, front, side, base, opts = {}) {
     const W = this.W, geo = this.c.geo, a = this.c.a;
-    const f = W.path.sample(sm, {});
+    const f = this.frame(sm);
     f.s = sm;
     const floors = opts.floors || 2 + Math.floor(this.r() * 3);
     const depth = opts.depth || 9 + this.r() * 4;
     const style = opts.style ?? Math.floor(this.r() * 8);
     const h = floors * 3.2;
     const d = front + side * depth / 2;
-    if (this.c.foot) this.c.foot(sm, d, along, depth);
+    this.foot(sm, d, along, depth);
     // walls (facade texture on all four sides)
     const v0 = 1 - (style * 256 + 256) / (FAC_STYLES * 256);
     const v1 = v0 + floors * 64 / (FAC_STYLES * 256);
@@ -437,7 +488,7 @@ export class Tokyo {
     this.face(geo.tkFacade, this.pt(f, -along / 2, d, base), -f.fx, -f.fz, depth, h, [0, v0, uD, v1]);
     this.face(geo.tkFacade, this.pt(f, along / 2, d, base), f.fx, f.fz, depth, h, [0, v0, uD, v1]);
     // flat roof slab with a parapet lip
-    W.obox(this.col(['#5a5c62', '#6d6a64', '#4a4d55'][style % 3]), sm, d, base + h, along + 0.2, depth + 0.2, 0.35, a);
+    this.box(this.col(['#5a5c62', '#6d6a64', '#4a4d55'][style % 3]), sm, d, base + h, along + 0.2, depth + 0.2, 0.35, a);
     // ground floor shop
     const shop = opts.shop ?? this.r() < 0.75;
     if (shop) {
@@ -469,8 +520,8 @@ export class Tokyo {
       if ((style === 2 || style === 4) && along > 4) {
         // balcony slab + solid front panel
         const bc = this.col(style === 4 ? '#c9ccd2' : '#7c8088');
-        W.obox(bc, sm, front - side * 0.45, base + fl * 3.2 - 0.05, along - 0.4, 0.9, 0.12, a);
-        W.obox(bc, sm, front - side * 0.88, base + fl * 3.2 + 0.07, along - 0.4, 0.06, 1.0, a);
+        this.box(bc, sm, front - side * 0.45, base + fl * 3.2 - 0.05, along - 0.4, 0.9, 0.12, a);
+        this.box(bc, sm, front - side * 0.88, base + fl * 3.2 + 0.07, along - 0.4, 0.06, 1.0, a);
       }
     }
     this.rooftop(sm, d, along, depth, base + h + 0.35);
@@ -496,9 +547,9 @@ export class Tokyo {
     for (let i = 0; i < n; i++) {
       const ds = (i - (n - 1) / 2) * 1.6;
       const d = front - side * 0.5;
-      this.W.obox(this.col('#c8281e'), f.s + ds, d, base + 2.15, 0.36, 0.36, 0.55, this.c.a);
-      this.W.obox(this.col('#202020'), f.s + ds, d, base + 2.7, 0.2, 0.2, 0.08, this.c.a);
-      const p = this.W.path.point(f.s + ds, d, base + 2.42);
+      this.box(this.col('#c8281e'), f.s + ds, d, base + 2.15, 0.36, 0.36, 0.55, this.c.a);
+      this.box(this.col('#202020'), f.s + ds, d, base + 2.7, 0.2, 0.2, 0.08, this.c.a);
+      const p = this.point(f.s + ds, d, base + 2.42);
       this.c.glows.push({ x: p.x, y: p.y, z: p.z, r: 1.0, g: 0.28, b: 0.14, size: 0.75, h: base + 2.42 });
     }
   }
@@ -506,7 +557,7 @@ export class Tokyo {
   hsign(f, along, front, side, y) {
     const w = Math.min(along - 0.8, 2.6 + this.r() * 2.4), h = w / 4;
     const geo = this.c.geo;
-    this.W.obox(geo.dark, f.s, front - side * 0.08, y, w + 0.1, 0.12, h + 0.1, this.c.a);
+    this.box(geo.dark, f.s, front - side * 0.08, y, w + 0.1, 0.12, h + 0.1, this.c.a);
     this.face(geo.tkSign, this.pt(f, 0, front - side * 0.19, y + 0.05), -side * f.rx, -side * f.rz, w, h, ATLAS.hsign(Math.floor(this.r() * 16)));
   }
 
@@ -517,15 +568,15 @@ export class Tokyo {
     const i = Math.floor(this.r() * 32);
     const [u0, v0, u1, v1] = ATLAS.vsign(i);
     const uv = [u0, v1 - (v1 - v0) * Math.min(1, h / 3.6), u1, v1];
-    this.W.obox(geo.dark, f.s + ds, dc, y - 0.05, 0.16, w + 0.08, h + 0.1, this.c.a);
-    this.W.obox(geo.metal, f.s + ds, front - side * 0.15, y + h * 0.75, 0.08, 0.3, 0.08, this.c.a);
+    this.box(geo.dark, f.s + ds, dc, y - 0.05, 0.16, w + 0.08, h + 0.1, this.c.a);
+    this.box(geo.metal, f.s + ds, front - side * 0.15, y + h * 0.75, 0.08, 0.3, 0.08, this.c.a);
     for (const dir of [-1, 1]) {
       this.face(geo.tkSign, this.pt(f, ds + dir * 0.12, dc, y), dir * f.fx, dir * f.fz, w, h, uv);
     }
     // a soft coloured glow so it reflects in the wet road at night
     const [bg] = ATLAS.styleOfV(i);
     const cl = new THREE.Color(bg);
-    const p = this.W.path.point(f.s + ds, dc, y + h / 2);
+    const p = this.point(f.s + ds, dc, y + h / 2);
     this.c.glows.push({ x: p.x, y: p.y, z: p.z, r: cl.r * 0.9, g: cl.g * 0.9, b: cl.b * 0.9, size: 0.9, h: y + h / 2 });
   }
 
@@ -534,16 +585,16 @@ export class Tokyo {
     const d = front - side * 0.45;
     const i = Math.floor(this.r() * 16);
     const body = ['#c8202a', '#f0f0ea', '#2a5ab0', '#e8e8e0', '#1e7a4a', '#d8d2c0'][i % 6];
-    this.W.obox(this.col(body), f.s + ds, d, base, 0.95, 0.8, 1.85, this.c.a);
+    this.box(this.col(body), f.s + ds, d, base, 0.95, 0.8, 1.85, this.c.a);
     this.face(geo.tkSign, this.pt(f, ds, d - side * 0.44, base + 0.02), -side * f.rx, -side * f.rz, 0.95, 1.8, ATLAS.vend(i));
-    const p = this.W.path.point(f.s + ds, d - side * 0.6, base + 1.4);
+    const p = this.point(f.s + ds, d - side * 0.6, base + 1.4);
     this.c.glows.push({ x: p.x, y: p.y, z: p.z, r: 0.75, g: 0.85, b: 1.0, size: 0.6, h: base + 1.4 });
   }
 
   // a standing A-frame sign on the pavement
   aBoard(f, ds, d, side, base) {
     const geo = this.c.geo;
-    this.W.obox(geo.dark, f.s + ds, d, base, 0.62, 0.3, 0.95, this.c.a);
+    this.box(geo.dark, f.s + ds, d, base, 0.62, 0.3, 0.95, this.c.a);
     const uv = ATLAS.hsign(Math.floor(this.r() * 16));
     // the 4:1 board texture, cropped to the left square-ish part
     const crop = [uv[0], uv[1], uv[0] + (uv[2] - uv[0]) * 0.45, uv[3]];
@@ -556,12 +607,12 @@ export class Tokyo {
     const frames = ['#b8322a', '#2a5a9a', '#d8d4c8', '#2a2a30', '#d8a030'];
     for (let i = 0; i < n; i++) {
       const s = f.s + ds + i * 0.75;
-      for (const w of [-0.55, 0.55]) W.obox(geo.dark, s, d + side * w, base, 0.06, 0.62, 0.62, a);
+      for (const w of [-0.55, 0.55]) this.box(geo.dark, s, d + side * w, base, 0.06, 0.62, 0.62, a);
       const fc = this.col(frames[Math.floor(this.r() * frames.length)]);
-      W.obox(fc, s, d, base + 0.42, 0.05, 1.0, 0.07, a);
-      W.obox(fc, s, d - side * 0.4, base + 0.3, 0.05, 0.06, 0.62, a);
-      W.obox(this.c.geo.dark, s, d - side * 0.4, base + 0.9, 0.5, 0.06, 0.05, a); // handlebar
-      W.obox(this.c.geo.dark, s, d + side * 0.25, base + 0.75, 0.12, 0.25, 0.05, a); // saddle
+      this.box(fc, s, d, base + 0.42, 0.05, 1.0, 0.07, a);
+      this.box(fc, s, d - side * 0.4, base + 0.3, 0.05, 0.06, 0.62, a);
+      this.box(this.c.geo.dark, s, d - side * 0.4, base + 0.9, 0.5, 0.06, 0.05, a); // handlebar
+      this.box(this.c.geo.dark, s, d + side * 0.25, base + 0.75, 0.12, 0.25, 0.05, a); // saddle
     }
   }
 
@@ -570,15 +621,15 @@ export class Tokyo {
     for (let i = 0; i < n; i++) {
       const ds = (this.r() - 0.5) * (along - 1);
       const d = front - side * 0.45;
-      this.W.obox(this.col(this.r() < 0.5 ? '#8a5a3a' : '#7a7c80'), f.s + ds, d, base, 0.5, 0.5, 0.45, this.c.a);
+      this.box(this.col(this.r() < 0.5 ? '#8a5a3a' : '#7a7c80'), f.s + ds, d, base, 0.5, 0.5, 0.45, this.c.a);
       this.bush(f.s + ds, d, base + 0.42, 0.38, 0.6);
     }
   }
 
   acUnit(f, ds, front, side, y) {
     const d = front - side * 0.2;
-    this.W.obox(this.col('#d4d4cc'), f.s + ds, d, y, 0.8, 0.36, 0.6, this.c.a);
-    this.W.obox(this.c.geo.dark, f.s + ds - 0.12, d - side * 0.19, y + 0.12, 0.38, 0.03, 0.38, this.c.a);
+    this.box(this.col('#d4d4cc'), f.s + ds, d, y, 0.8, 0.36, 0.6, this.c.a);
+    this.box(this.c.geo.dark, f.s + ds - 0.12, d - side * 0.19, y + 0.12, 0.38, 0.03, 0.38, this.c.a);
   }
 
   rooftop(sm, d, along, depth, y) {
@@ -586,35 +637,35 @@ export class Tokyo {
     if (r < 0.3) {
       // water tank on legs
       const ds = (this.r() - 0.5) * (along - 3), dd = d + (this.r() - 0.5) * (depth - 3);
-      for (const [i, j] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) W.obox(this.c.geo.metal, sm + ds + i * 0.6, dd + j * 0.6, y, 0.1, 0.1, 1.0, a);
-      W.obox(this.col('#9aa0a6'), sm + ds, dd, y + 1.0, 1.6, 1.6, 1.5, a);
+      for (const [i, j] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) this.box(this.c.geo.metal, sm + ds + i * 0.6, dd + j * 0.6, y, 0.1, 0.1, 1.0, a);
+      this.box(this.col('#9aa0a6'), sm + ds, dd, y + 1.0, 1.6, 1.6, 1.5, a);
     } else if (r < 0.5 && along > 6) {
       // steel frame (old rooftop sign structure)
       const ds = (this.r() - 0.5) * 2, hh = 2.5 + this.r() * 2;
       const g = this.c.geo.dark;
-      for (const [i, j] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) W.obox(g, sm + ds + i * 1.6, d + j * 1.6, y, 0.12, 0.12, hh, a);
-      W.obox(g, sm + ds, d - 1.6, y + hh, 3.3, 0.12, 0.12, a);
-      W.obox(g, sm + ds, d + 1.6, y + hh, 3.3, 0.12, 0.12, a);
-      W.obox(g, sm + ds - 1.6, d, y + hh, 0.12, 3.3, 0.12, a);
-      W.obox(g, sm + ds + 1.6, d, y + hh, 0.12, 3.3, 0.12, a);
-      W.obox(g, sm + ds, d - 1.6, y + hh * 0.5, 3.3, 0.1, 0.1, a);
+      for (const [i, j] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) this.box(g, sm + ds + i * 1.6, d + j * 1.6, y, 0.12, 0.12, hh, a);
+      this.box(g, sm + ds, d - 1.6, y + hh, 3.3, 0.12, 0.12, a);
+      this.box(g, sm + ds, d + 1.6, y + hh, 3.3, 0.12, 0.12, a);
+      this.box(g, sm + ds - 1.6, d, y + hh, 0.12, 3.3, 0.12, a);
+      this.box(g, sm + ds + 1.6, d, y + hh, 0.12, 3.3, 0.12, a);
+      this.box(g, sm + ds, d - 1.6, y + hh * 0.5, 3.3, 0.1, 0.1, a);
     } else if (r < 0.75) {
       // a few AC condensers / a stair hut
-      if (this.r() < 0.5) W.obox(this.col('#b8b4aa'), sm + (this.r() - 0.5) * (along - 3), d, y, 2.2, 2.4, 2.3, a);
-      for (let i = 0; i < 2; i++) W.obox(this.col('#d4d4cc'), sm + (this.r() - 0.5) * (along - 2), d + (this.r() - 0.5) * (depth - 2), y, 0.9, 0.5, 0.7, a);
+      if (this.r() < 0.5) this.box(this.col('#b8b4aa'), sm + (this.r() - 0.5) * (along - 3), d, y, 2.2, 2.4, 2.3, a);
+      for (let i = 0; i < 2; i++) this.box(this.col('#d4d4cc'), sm + (this.r() - 0.5) * (along - 2), d + (this.r() - 0.5) * (depth - 2), y, 0.9, 0.5, 0.7, a);
     }
   }
 
   // ---- a low Japanese house behind a block wall, tiled roof
   house(sm, along, front, side, base) {
     const W = this.W, geo = this.c.geo, a = this.c.a;
-    const f = W.path.sample(sm, {});
+    const f = this.frame(sm);
     f.s = sm;
     const setback = 2.2 + this.r() * 1.5;
     const depth = 7 + this.r() * 3;
     const hf = front + side * setback;
     const d = hf + side * depth / 2;
-    if (this.c.foot) this.c.foot(sm, d, along - 1.2, depth);
+    this.foot(sm, d, along - 1.2, depth);
     const floors = this.r() < 0.75 ? 2 : 1;
     const style = [0, 3, 5, 6, 1][Math.floor(this.r() * 5)];
     const h = floors * 3.0;
@@ -628,13 +679,13 @@ export class Tokyo {
     this.face(geo.tkFacade, this.pt(f, w / 2, d, base), f.fx, f.fz, depth, h, [0, v0, depth / 3.2, v1]);
     // low tiled roof with eaves
     const roofCol = ['#3d4a5c', '#4a4038', '#2f3a48', '#5a3a30'][Math.floor(this.r() * 4)];
-    W.roof(this.col(roofCol), sm, d, base + h, w + 0.9, depth + 0.9, 1.3 + this.r() * 0.6, a);
+    this.roof(this.col(roofCol), sm, d, base + h, w + 0.9, depth + 0.9, 1.3 + this.r() * 0.6, a);
     // concrete block wall along the front with a gate gap
     const wc = this.col(this.r() < 0.5 ? '#a8a49a' : '#8f8b82');
     const gate = (this.r() - 0.5) * (along - 3);
     const segA = (gate - 1) - (-along / 2), segB = along / 2 - (gate + 1);
-    if (segA > 0.3) W.obox(wc, sm - along / 2 + segA / 2, front + side * 0.15, base, segA, 0.2, 1.25, a);
-    if (segB > 0.3) W.obox(wc, sm + gate + 1 + segB / 2, front + side * 0.15, base, segB, 0.2, 1.25, a);
+    if (segA > 0.3) this.box(wc, sm - along / 2 + segA / 2, front + side * 0.15, base, segA, 0.2, 1.25, a);
+    if (segB > 0.3) this.box(wc, sm + gate + 1 + segB / 2, front + side * 0.15, base, segB, 0.2, 1.25, a);
     // garden shrub / small tree peeking over the wall, AC unit on the side
     if (this.r() < 0.7) this.bush(sm + (this.r() - 0.5) * (along - 3), front + side * 1.2, base + 0.6, 1.0, 1.8 + this.r());
     if (floors === 2 && this.r() < 0.6) this.acUnit(f, (this.r() - 0.5) * (w - 1.6), hf, side, base + 3.3);
@@ -644,14 +695,14 @@ export class Tokyo {
   // ---- a plain block behind the street (apartments / small offices)
   backBlock(sm, along, near, side, base, floors, building, depthIn) {
     const W = this.W, geo = this.c.geo, a = this.c.a;
-    const f = W.path.sample(sm, {});
+    const f = this.frame(sm);
     const depth = depthIn || 10 + this.r() * 8;
     const d = near + side * depth / 2;
-    if (this.c.foot) this.c.foot(sm, d, along, depth);
+    this.foot(sm, d, along, depth);
     const h = floors * 3.2;
     if (building) {
       const uOff = Math.floor(this.r() * 16) / 16, vOff = Math.floor(this.r() * 16) / 16;
-      W.boxBuilding(geo.building, sm, d, base - 0.5, along, depth, h + 0.5, a, uOff, vOff);
+      this.boxBuilding(geo.building, sm, d, base - 0.5, along, depth, h + 0.5, a, uOff, vOff);
     } else {
       const style = [2, 4, 0, 5, 6, 7, 1][Math.floor(this.r() * 7)];
       const v0 = 1 - (style * 256 + 256) / (FAC_STYLES * 256);
@@ -670,15 +721,15 @@ export class Tokyo {
         this.face(geo.tkFacade, this.pt(f, -along / 2, d, yb), -f.fx, -f.fz, depth, hh, [0, vs, depth / 3.2, ve]);
         this.face(geo.tkFacade, this.pt(f, along / 2, d, yb), f.fx, f.fz, depth, hh, [0, vs, depth / 3.2, ve]);
       }
-      W.obox(this.col('#55585e'), sm, d, base + h, along + 0.2, depth + 0.2, 0.35, a);
+      this.box(this.col('#55585e'), sm, d, base + h, along + 0.2, depth + 0.2, 0.35, a);
       void v1;
     }
     if (this.r() < 0.35) {
       // rooftop billboard / sign facing the road
       const w = Math.min(along - 1, 6), hh = w / 4;
       const y = base + h + 0.35;
-      for (const j of [-1, 1]) W.obox(geo.dark, sm + j * w * 0.35, near + side * 1.2, y, 0.15, 0.15, 1.2, a);
-      W.obox(geo.dark, sm, near + side * 1.0, y + 1.1, w + 0.1, 0.12, hh + 0.1, a);
+      for (const j of [-1, 1]) this.box(geo.dark, sm + j * w * 0.35, near + side * 1.2, y, 0.15, 0.15, 1.2, a);
+      this.box(geo.dark, sm, near + side * 1.0, y + 1.1, w + 0.1, 0.12, hh + 0.1, a);
       this.face(geo.tkSign, this.pt(f, 0, near + side * 0.9, y + 1.15), -side * f.rx, -side * f.rz, w, hh, ATLAS.hsign(Math.floor(this.r() * 16)));
     } else {
       this.rooftop(sm, d, along, depth, base + h + 0.35);
@@ -694,7 +745,7 @@ export class Tokyo {
     const n = r > 0.8 ? 4 : r > 0.5 ? 3 : 2;
     for (let i = 0; i < n; i++) {
       const t = this.r() * 6.28, o = i === 0 ? 0 : r * 0.45;
-      const p = W.path.point(s + Math.cos(t) * o, d + Math.sin(t) * o, y + h * (0.45 + 0.12 * this.r()));
+      const p = this.point(s + Math.cos(t) * o, d + Math.sin(t) * o, y + h * (0.45 + 0.12 * this.r()));
       const rr = r * (i === 0 ? 0.8 : 0.6 + 0.15 * this.r());
       leafBall(geo, p.x - a.x, p.y - a.y, p.z - a.z, rr, Math.min(rr, h * 0.5), this.r() * 1000);
     }
@@ -704,12 +755,12 @@ export class Tokyo {
   streetTree(s, d, base, k) {
     const W = this.W, a = this.c.a, geo = this.c.geo;
     const th = 2.4 * k;
-    W.obox(geo.dark, s, d, base, 0.24, 0.24, th + 0.4, a);
-    W.obox(geo.dark, s + 0.35, d, base + th - 0.5, 0.7, 0.12, 0.12, a, 0.6);
-    W.obox(geo.dark, s - 0.3, d + 0.2, base + th - 0.2, 0.6, 0.12, 0.12, a, -0.8);
+    this.box(geo.dark, s, d, base, 0.24, 0.24, th + 0.4, a);
+    this.box(geo.dark, s + 0.35, d, base + th - 0.5, 0.7, 0.12, 0.12, a, 0.6);
+    this.box(geo.dark, s - 0.3, d + 0.2, base + th - 0.2, 0.6, 0.12, 0.12, a, -0.8);
     const crown = [[0, 0, 0.9, 1.35], [0.9, 0.2, 0.55, 0.95], [-0.8, -0.3, 0.6, 0.95], [0.2, 0.85, 0.5, 0.9], [-0.2, -0.85, 0.45, 0.9], [0.1, 0, 1.45, 0.85]];
     for (const [ds, dd, dy, r] of crown) {
-      const p = W.path.point(s + ds * k, d + dd * k, base + th + dy * k);
+      const p = this.point(s + ds * k, d + dd * k, base + th + dy * k);
       leafBall(geo.leafTk, p.x - a.x, p.y - a.y, p.z - a.z, r * k, r * k * 0.85, this.r() * 1000, dy > 1 ? 0.12 : 0);
     }
   }
@@ -717,7 +768,7 @@ export class Tokyo {
   // ---- pavement furniture in the band [dIn, dOut] (road side .. shop side)
   furniture(s, dIn, dOut, side, base, busy) {
     const W = this.W, a = this.c.a, geo = this.c.geo;
-    const f = W.path.sample(s, {});
+    const f = this.frame(s);
     f.s = s;
     const band = (dOut - dIn) * side;
     const at = (w) => dIn + side * (w / 2 + Math.max(0, band - w) * this.r());
@@ -726,32 +777,32 @@ export class Tokyo {
     if (band > 2.2 && r < (busy ? 0.12 : 0.06)) {
       // bus stop: shelter with a lit advert panel and a stop sign
       const d = at(1.8);
-      for (const j of [-1.8, 1.8]) W.obox(geo.metal, s + j, d + side * 0.6, base, 0.1, 0.1, 2.5, a);
-      W.obox(this.col('#3a4250'), s, d, base + 2.5, 4.2, 1.8, 0.12, a);
-      W.obox(geo.dark, s, d + side * 0.7, base + 0.4, 3.8, 0.08, 1.9, a);
+      for (const j of [-1.8, 1.8]) this.box(geo.metal, s + j, d + side * 0.6, base, 0.1, 0.1, 2.5, a);
+      this.box(this.col('#3a4250'), s, d, base + 2.5, 4.2, 1.8, 0.12, a);
+      this.box(geo.dark, s, d + side * 0.7, base + 0.4, 3.8, 0.08, 1.9, a);
       this.face(geo.tkSign, this.pt(f, 1.2, d + side * 0.64, base + 0.5), nF[0], nF[1], 1.2, 1.6, ATLAS.vsign(Math.floor(this.r() * 32)));
-      W.obox(this.col('#6a6d72'), s - 0.6, d + side * 0.2, base + 0.45, 2.2, 0.4, 0.08, a); // bench
-      W.obox(geo.metal, s - 2.6, d - side * 0.5, base, 0.08, 0.08, 2.6, a);
-      W.obox(this.col('#2a7ad0'), s - 2.6, d - side * 0.5, base + 2.4, 0.06, 0.6, 0.6, a);
-      const p = W.path.point(s + 1.2, d + side * 0.4, base + 1.3);
+      this.box(this.col('#6a6d72'), s - 0.6, d + side * 0.2, base + 0.45, 2.2, 0.4, 0.08, a); // bench
+      this.box(geo.metal, s - 2.6, d - side * 0.5, base, 0.08, 0.08, 2.6, a);
+      this.box(this.col('#2a7ad0'), s - 2.6, d - side * 0.5, base + 2.4, 0.06, 0.6, 0.6, a);
+      const p = this.point(s + 1.2, d + side * 0.4, base + 1.3);
       this.c.glows.push({ x: p.x, y: p.y, z: p.z, r: 0.9, g: 0.9, b: 1.0, size: 0.7, h: base + 1.3 });
     } else if (r < 0.32) {
       // street tree in a square planter
       const d = at(1.4);
-      W.obox(this.col('#8f8b82'), s, d, base, 1.4, 1.4, 0.35, a);
+      this.box(this.col('#8f8b82'), s, d, base, 1.4, 1.4, 0.35, a);
       this.streetTree(s, d, base + 0.35, 0.85 + this.r() * 0.4);
     } else if (r < 0.45) {
       // long planter with shrubs
       const d = at(0.8);
-      W.obox(this.col('#a8a49a'), s, d, base, 2.6, 0.8, 0.5, a);
+      this.box(this.col('#a8a49a'), s, d, base, 2.6, 0.8, 0.5, a);
       for (const j of [-0.8, 0, 0.8]) this.bush(s + j, d, base + 0.45, 0.45, 0.6);
     } else if (r < 0.56) {
       // bench
       const d = at(0.6);
       const bc = this.col(['#7a5a3a', '#4a5a6a', '#6a6d72'][Math.floor(this.r() * 3)]);
-      W.obox(bc, s, d, base + 0.42, 1.8, 0.5, 0.08, a);
-      W.obox(bc, s, d + side * 0.24, base + 0.5, 1.8, 0.06, 0.45, a);
-      for (const j of [-0.75, 0.75]) W.obox(geo.dark, s + j, d, base, 0.08, 0.45, 0.42, a);
+      this.box(bc, s, d, base + 0.42, 1.8, 0.5, 0.08, a);
+      this.box(bc, s, d + side * 0.24, base + 0.5, 1.8, 0.06, 0.45, a);
+      for (const j of [-0.75, 0.75]) this.box(geo.dark, s + j, d, base, 0.08, 0.45, 0.42, a);
     } else if (r < 0.68) {
       // bicycle rack
       const d = at(1.3);
@@ -762,23 +813,23 @@ export class Tokyo {
       for (const j of [-0.5, 0.5]) {
         const i = Math.floor(this.r() * 16);
         const body = ['#c8202a', '#f0f0ea', '#2a5ab0', '#e8e8e0', '#1e7a4a', '#d8d2c0'][i % 6];
-        W.obox(this.col(body), s + j, d, base, 0.95, 0.8, 1.85, a);
+        this.box(this.col(body), s + j, d, base, 0.95, 0.8, 1.85, a);
         this.face(geo.tkSign, this.pt(f, j, d - side * 0.44, base + 0.02), nF[0], nF[1], 0.95, 1.8, ATLAS.vend(i));
       }
-      const p = W.path.point(s, d - side * 0.7, base + 1.4);
+      const p = this.point(s, d - side * 0.7, base + 1.4);
       this.c.glows.push({ x: p.x, y: p.y, z: p.z, r: 0.75, g: 0.85, b: 1.0, size: 0.75, h: base + 1.4 });
     } else if (r < 0.85) {
       // green phone booth
       const d = at(1.0);
-      W.obox(this.col('#2a7a4a'), s, d, base, 1.0, 1.0, 0.25, a);
-      W.obox(this.col('#9ab8c8'), s, d, base + 0.25, 0.92, 0.92, 1.85, a);
-      W.obox(this.col('#2a7a4a'), s, d, base + 2.1, 1.0, 1.0, 0.25, a);
-      const p = W.path.point(s, d, base + 1.9);
+      this.box(this.col('#2a7a4a'), s, d, base, 1.0, 1.0, 0.25, a);
+      this.box(this.col('#9ab8c8'), s, d, base + 0.25, 0.92, 0.92, 1.85, a);
+      this.box(this.col('#2a7a4a'), s, d, base + 2.1, 1.0, 1.0, 0.25, a);
+      const p = this.point(s, d, base + 1.9);
       this.c.glows.push({ x: p.x, y: p.y, z: p.z, r: 0.8, g: 1.0, b: 0.85, size: 0.5, h: base + 1.9 });
     } else {
       // rubbish / recycling bins
       const d = at(0.5);
-      ['#2a5ab0', '#d8a030', '#2a7a4a'].forEach((cl, i) => W.obox(this.col(cl), s + (i - 1) * 0.55, d, base, 0.5, 0.5, 0.9, a));
+      ['#2a5ab0', '#d8a030', '#2a7a4a'].forEach((cl, i) => this.box(this.col(cl), s + (i - 1) * 0.55, d, base, 0.5, 0.5, 0.9, a));
     }
   }
 
@@ -790,14 +841,15 @@ export class Tokyo {
       const s = k * SP + 7;
       if (s < s0 || !ok(s) || !ok(s + SP)) continue;
       const base = baseAt(s), base2 = baseAt(s + SP);
-      W.obox(this.col('#8d8a84'), s, d, base, 0.34, 0.34, 10.2, a);
-      W.obox(geo.dark, s, d, base + 9.2, 0.14, 1.9, 0.14, a);
-      W.obox(geo.dark, s, d, base + 8.3, 0.14, 1.4, 0.14, a);
+      if (this.c.posts) this.c.posts.push(this.map(s, d));
+      this.box(this.col('#8d8a84'), s, d, base, 0.34, 0.34, 10.2, a);
+      this.box(geo.dark, s, d, base + 9.2, 0.14, 1.9, 0.14, a);
+      this.box(geo.dark, s, d, base + 8.3, 0.14, 1.4, 0.14, a);
       if (hash(k * 3.7 + d) < 0.35) {
-        W.obox(this.col('#6a6d72'), s, d + 0.45, base + 6.6, 0.6, 0.6, 1.1, a); // transformer
-        W.obox(geo.dark, s, d + 0.45, base + 7.7, 0.4, 0.4, 0.1, a);
+        this.box(this.col('#6a6d72'), s, d + 0.45, base + 6.6, 0.6, 0.6, 1.1, a); // transformer
+        this.box(geo.dark, s, d + 0.45, base + 7.7, 0.4, 0.4, 0.1, a);
       }
-      if (hash(k * 5.1 + d) < 0.4) W.obox(this.col('#e8e2c8'), s, d - 0.2, base + 3.2, 0.06, 0.32, 1.1, a); // address plate
+      if (hash(k * 5.1 + d) < 0.4) this.box(this.col('#e8e2c8'), s, d - 0.2, base + 3.2, 0.06, 0.32, 1.1, a); // address plate
       // wires: three on the top arm, two lower, one thick cable
       const runs = [[-0.85, 9.32], [0, 9.32], [0.85, 9.32], [-0.6, 8.42], [0.6, 8.42], [0.25, 6.4]];
       for (const [dd, y] of runs) this.wire(s, d + dd, base + y, s + SP, d + dd, base2 + y, 0.45 + hash(k + dd) * 0.35);
@@ -812,7 +864,7 @@ export class Tokyo {
       const t = i / N;
       const s = sA + (sB - sA) * t, d = dA + (dB - dA) * t;
       const y = yA + (yB - yA) * t - sag * 4 * t * (1 - t);
-      const p = W.path.point(s, d, y);
+      const p = this.point(s, d, y);
       const q = [p.x - a.x, p.y - a.y, p.z - a.z];
       if (prev) L.push(...prev, ...q);
       prev = q;

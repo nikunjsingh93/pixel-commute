@@ -67,6 +67,7 @@ traffic.planner = planner;
 player.planner = planner;
 player.world = world;
 player.groundP.world = world;
+player.manual = loadPref('gearbox') === 'manual';
 const weather = new Weather(scene);
 const hud2Canvas = document.getElementById('hud2');
 const hud = new Hud(hudCanvas, hud2Canvas);
@@ -299,6 +300,18 @@ function runAction(k) {
     case 'KeyU':
       hud.visible = !hud.visible;
       break;
+    case 'KeyX':
+      player.manual = !player.manual;
+      savePref('gearbox', player.manual ? 'manual' : 'auto');
+      hud.say(player.manual ? 'MANUAL GEARBOX: E UP  Q DOWN' : 'AUTOMATIC GEARBOX', 2.6);
+      break;
+    case 'KeyE':
+    case 'KeyQ':
+      if (player.manual && !player.auto) {
+        if (k === 'KeyE') player.veh.shiftUp();
+        else player.veh.shiftDown();
+      }
+      break;
     case 'KeyJ':
       openJobs();
       break;
@@ -338,6 +351,7 @@ function enableTouch() {
     keys,
     press: (code) => action(code),
     driving: () => st.mode === 'drive' && !st.paused && !photo.active && !anyPanelOpen(),
+    manual: () => player.manual && !player.auto,
   });
 }
 
@@ -359,7 +373,7 @@ function menuState() {
     cam: CAMS[st.cam], auto: player.auto, period: look.name, weather: W.name,
     radio: !!(audio.ctx && audio.music), station: radio.label(),
     res: `${st.h}p`, touch: st.touch, car: player.def ? player.def.name : '',
-    commute: commute.on, job: commute.job ? `exit ${commute.job.f.no}` : 'pick one',
+    commute: commute.on, manual: player.manual, job: commute.job ? `exit ${commute.job.f.no}` : 'pick one',
   };
 }
 const panels = [];
@@ -368,7 +382,7 @@ function anyPanelOpen() {
 }
 const pauseMenu = new Menu('pause-menu', [
   { cls: 'wide primary', label: () => 'Resume', run: () => { st.paused = false; }, spin: false },
-  { label: () => 'Photo<small>mode</small>', run: () => enterPhoto(), spin: false },
+  { label: (m) => `Garage<small>${m.car}</small>`, run: () => openGarage(), spin: false },
   { label: (m) => `Camera<small>${m.cam}</small>`, run: () => runAction('KeyC') },
   { label: (m) => `Autopilot<small>${m.auto ? 'on' : 'off'}</small>`, run: () => runAction('KeyO'), act: (m) => m.auto },
   { label: (m) => `Time<small>${m.period}</small>`, run: () => runAction('KeyT') },
@@ -377,7 +391,8 @@ const pauseMenu = new Menu('pause-menu', [
   { label: () => 'Next station<small>tune</small>', run: () => runAction('KeyN') },
   { label: (m) => `Resolution<small>${m.res}</small>`, run: () => cycleResolution() },
   { label: () => 'Fullscreen<small>toggle</small>', run: () => toggleFullscreen(), spin: false },
-  { label: (m) => `Garage<small>${m.car}</small>`, run: () => openGarage(), spin: false },
+  { label: () => 'Photo<small>mode</small>', run: () => enterPhoto(), spin: false },
+  { label: (m) => `Gearbox<small>${m.manual ? 'manual' : 'auto'}</small>`, run: () => runAction('KeyX'), act: (m) => m.manual },
   { label: (m) => `Mode<small>${m.commute ? 'commute' : 'zen'}</small>`, run: () => startDriving(commute.on ? 'zen' : 'commute'), act: (m) => m.commute },
   { label: (m) => `Jobs<small>${m.job}</small>`, run: () => openJobs(), show: (m) => m.commute, spin: false },
 ], menuState, { right: 'max(18px, env(safe-area-inset-right))', top: '50%', transform: 'translateY(-50%)' });

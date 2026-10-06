@@ -32,6 +32,15 @@ export function setupTouch(game) {
   const HB = 'clamp(56px, 14vmin, 84px)';
   button(root, 'small', '<span>Hand</span><span>brake</span>', { width: HB, height: HB, right: br, bottom: `calc(${bb} + ${G} + 14px)` }, ...hold('ShiftLeft'));
 
+  // manual gearbox: shift up / down above the steering buttons
+  const GB = 'clamp(48px, 12vmin, 66px)';
+  const up = button(root, 'small', '<span>Gear</span><span>+</span>', { width: GB, height: GB, left: bl, bottom: `calc(${bb} + ${S} + 14px)` }, () => game.press('KeyE'));
+  const dn = button(root, 'small', '<span>Gear</span><span>-</span>', { width: GB, height: GB, left: `calc(${bl} + ${GB} + 12px)`, bottom: `calc(${bb} + ${S} + 14px)` }, () => game.press('KeyQ'));
+  setInterval(() => {
+    const man = game.manual ? game.manual() : false;
+    up.style.display = dn.style.display = man ? '' : 'none';
+  }, 150);
+
   // the only top button: hamburger -> pause menu
   const T = 'clamp(44px, 11vmin, 56px)';
   button(root, 'pill', burgerIcon, { width: T, height: T, top: 'max(12px, env(safe-area-inset-top))', right: br }, () => game.press('Escape'));

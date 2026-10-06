@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { makeCar, CAR_COLORS } from './cars.js';
 import { hash } from './path.js';
-import { Tokyo } from './tokyo.js';
+import { Tokyo, ATLAS } from './tokyo.js';
 
 const NEAR = 48; // near street centre line (d)
 const FAR = 118; // far street centre line (d)
@@ -110,9 +110,9 @@ export class ExitNet {
     this.areas = [];
     this.fuel = !!f.fuel;
     if (this.fuel) {
-      this.forecourt = { s0: S + 252, s1: S + 334, d0: NEAR + ST_HW - 0.5, d1: NEAR + 28 };
+      this.forecourt = { s0: S + 266, s1: S + 316, d0: NEAR + ST_HW - 0.5, d1: NEAR + 22 };
       this.areas.push(this.forecourt);
-      this.pumps = [[S + 278, NEAR + 14], [S + 306, NEAR + 14], [S + 278, NEAR + 20], [S + 306, NEAR + 20]];
+      this.pumps = [[S + 281, NEAR + 11.5], [S + 301, NEAR + 11.5], [S + 281, NEAR + 16.5], [S + 301, NEAR + 16.5]];
     }
     // delivery addresses (door positions, just off the kerb)
     this.drops = [
@@ -418,7 +418,9 @@ export class ExitNet {
     // forecourt and the delivery bays (with room for the pavements), and
     // becomes a solid obstacle: you can drive off the streets here.
     const PAVE = 4.5;
-    const tk = new Tokyo(W, { geo, a: A, glows, wires: this.wires, foot: (s, d, along, across) => this.obstacles.push({ s, d, L: along, W: across, kind: 'building' }) }, R);
+    const posts = [[L.s, L.d]];
+    for (let s = this.sA + 20; s < this.sB - 10; s += 34) posts.push([s, NEAR - ST_HW - 1.6], [s + 17, FAR + ST_HW + 1.6]);
+    const tk = new Tokyo(W, { geo, a: A, glows, wires: this.wires, posts, foot: (s, d, along, across) => this.obstacles.push({ s, d, L: along, W: across, kind: 'building' }) }, R);
     const margin = { street: ST_HW + PAVE - 0.1, ramp: RAMP_HW + 2.5, aux: AUX_HW + 2.5 };
     const blocked = (s, d) => {
       if (d < 20.5 || d > 172) return true;
@@ -426,8 +428,9 @@ export class ExitNet {
       for (const p of this.pads) if (Math.hypot(s - p.s, d - p.d) < p.r + 3) return true;
       if (this.fuel) {
         const fc = this.forecourt;
-        if (s > fc.s0 - 3 && s < fc.s1 + 3 && d > fc.d0 - 3 && d < fc.d1 + 14) return true;
+        if (s > fc.s0 - 3 && s < fc.s1 + 3 && d > fc.d0 - 3 && d < fc.d1 + 9.5) return true;
       }
+      for (const [ps, pd] of posts) if (Math.abs(ps - s) < 1.6 && Math.abs(pd - d) < 1.6) return true;
       for (const dr of this.drops) if (Math.hypot(s - dr.s, d - dr.d) < 3.5) return true;
       return false;
     };
@@ -441,7 +444,7 @@ export class ExitNet {
       }
       return true;
     };
-    if (this.fuel) this.buildStation(geo, glows, lights, A);
+    if (this.fuel) this.buildStation(geo, glows, lights, A, tk);
     let k = 0;
     // a row of street-facing buildings from s0 to s1; front d, facing side
     // (-1: the building lies toward smaller d)
@@ -485,6 +488,69 @@ export class ExitNet {
     // inside the block: shops facing both streets (the forecourt is skipped)
     row(inS0, inS1, NEAR + ST_HW + PAVE, 1, 0.8);
     row(inS0, inS1, FAR - ST_HW - PAVE, -1, 0.7);
+    // utility poles + wires along the near and far streets, clear of the lamps
+    const nearLamp = (s, off) => Math.abs(((s - (this.sA + 20 + off)) % 34 + 34) % 34) < 3 || Math.abs(((s - (this.sA + 20 + off)) % 34 + 34) % 34) > 31;
+    const flat = () => 0.02;
+    tk.poles(this.sA + 20, this.sB - 20, NEAR - ST_HW - 0.7, flat, (s) => s > this.sA + 20 && s < this.sB - 20 && !nearLamp(s, 0));
+    tk.poles(this.sA + 20, this.sB - 20, FAR + ST_HW + 0.7, flat, (s) => s > this.sA + 20 && s < this.sB - 20 && !nearLamp(s, 17));
+    // frontage along both side streets (street frames turned a quarter turn:
+    // a runs along the side street = +d, b across it = -s)
+    const sideRow = (pivotS, a0, a1, bFront, side, mix) => {
+      tk.setFrame(pivotS, 0, Math.PI / 2);
+      let a = a0 + R(k++) * 2;
+      while (a < a1 - 4) {
+        const shop = R(k++) < mix;
+        const along = Math.min(shop ? 5.5 + R(k++) * 4.5 : 9 + R(k++) * 4, a1 - a);
+        if (along < 4.5) break;
+        const am = a + along / 2;
+        const depth = shop ? 9 + R(k++) * 4 : 14;
+        // rectangle in road space: s = pivotS - b, d = a
+        const sA = pivotS - bFront, sB = pivotS - (bFront + side * depth);
+        if (free((sA + sB) / 2, Math.abs(sA - sB), am - along / 2, am + along / 2)) {
+          if (shop) tk.shopHouse(am, along, bFront, side, 0.02, { depth, shop: R(k++) < 0.85 });
+          else tk.house(am, along, bFront, side, 0.02);
+        }
+        a += along + (R(k++) < 0.2 ? 1 + R(k++) * 2 : 0);
+      }
+      tk.setFrame();
+    };
+    const sideA0 = NEAR + ST_HW + PAVE, sideA1 = FAR - ST_HW - PAVE;
+    for (const [pivot, outerSide] of [[this.sA, 1], [this.sB, -1]]) {
+      // outer side of the street (outside the loop) and inner side
+      sideRow(pivot, sideA0 - 4, sideA1 + 4, outerSide * (ST_HW + PAVE), outerSide, 0.75);
+      sideRow(pivot, sideA0, sideA1, -outerSide * (ST_HW + PAVE), -outerSide, 0.75);
+    }
+    // pavement furniture: kerbside band of every straight street piece
+    const furnish = (pivotS, rot, a0, a1, bKerb, side) => {
+      tk.setFrame(pivotS, 0, rot);
+      for (let a = a0 + R(k++) * 4; a < a1; a += 6 + R(k++) * 6) {
+        const bIn = bKerb + side * 0.8, bOut = bKerb + side * (PAVE - 1.6);
+        const [s1, d1] = tk.map(a, (bIn + bOut) / 2);
+        if (blocked2(s1, d1)) continue;
+        tk.furniture(a, bIn, bOut, side, 0.02, true);
+      }
+      tk.setFrame();
+    };
+    // like blocked() but the pavement itself is fine; posts, bays, pads are not
+    const blocked2 = (s, d) => {
+      for (const [ps, pd] of posts) if (Math.hypot(ps - s, pd - d) < 3) return true;
+      for (const dr of this.drops) if (Math.hypot(s - dr.s, d - dr.d) < 4) return true;
+      for (const p of this.pads) if (Math.hypot(s - p.s, d - p.d) < p.r + 3) return true;
+      if (this.fuel) {
+        const fc = this.forecourt;
+        if (s > fc.s0 - 4 && s < fc.s1 + 4 && d > fc.d0 - 4 && d < fc.d1 + 4) return true;
+      }
+      return false;
+    };
+    const r18 = 22;
+    furnish(0, 0, this.sA + r18, this.sB - r18, NEAR - ST_HW, -1);
+    furnish(0, 0, this.sA + r18, this.sB - r18, NEAR + ST_HW, 1);
+    furnish(0, 0, this.sA + r18, this.sB - r18, FAR - ST_HW, -1);
+    furnish(0, 0, this.sA + r18, this.sB - r18, FAR + ST_HW, 1);
+    for (const pivot of [this.sA, this.sB]) {
+      furnish(pivot, Math.PI / 2, NEAR + r18, FAR - r18, ST_HW, 1);
+      furnish(pivot, Math.PI / 2, NEAR + r18, FAR - r18, -ST_HW, -1);
+    }
     // the middle of the block: a little park, then apartments
     const parkS = inS0 + 18 + R(k++) * (inS1 - inS0 - 60);
     for (let i = 0; i < 9; i++) {
@@ -517,11 +583,6 @@ export class ExitNet {
     }
     // a hedge and street trees between the highway rail and the near row
     for (let s = S + 200; s < S + 382; s += 6 + R(k++) * 5) if (!blocked(s, 22)) tk.bush(s, 22 + R(k++) * 2, 0.4, 1.1, 1.6);
-    // utility poles + wires along the near and far streets, clear of the lamps
-    const nearLamp = (s, off) => Math.abs(((s - (this.sA + 20 + off)) % 34 + 34) % 34) < 3 || Math.abs(((s - (this.sA + 20 + off)) % 34 + 34) % 34) > 31;
-    const flat = () => 0.02;
-    tk.poles(this.sA + 20, this.sB - 20, NEAR - ST_HW - 0.7, flat, (s) => s > this.sA + 20 && s < this.sB - 20 && !nearLamp(s, 0));
-    tk.poles(this.sA + 20, this.sB - 20, FAR + ST_HW + 0.7, flat, (s) => s > this.sA + 20 && s < this.sB - 20 && !nearLamp(s, 17));
     // delivery spots: a yellow loading bay on the pavement and a lit number post
     for (const dr of this.drops) {
       geo.colored.col = '#d9a62e';
@@ -577,42 +638,91 @@ export class ExitNet {
     this.built = true;
   }
 
-  buildStation(geo, glows, lights, A) {
-    const W = this.W, P = W.path;
+  // a compact petrol station: canopy over two pump islands, a kiosk shop,
+  // a car wash bay, a price tower, and the clutter around them
+  buildStation(geo, glows, lights, A, tk) {
+    const W = this.W, P = W.path, S = this.S;
     const fc = this.forecourt;
     const sm = (fc.s0 + fc.s1) / 2;
-    const dm = NEAR + 17;
-    // canopy on four columns with a lit underside
-    W.obox(geo.canopy, sm, dm, 5.0, 46, 14, 0.8, A);
-    geo.colored.col = '#c62a25';
-    W.obox(geo.colored, sm, dm, 5.8, 46.4, 14.4, 0.35, A);
-    for (const [ds, dd] of [[-20, -6], [20, -6], [-20, 6], [20, 6]]) W.obox(geo.metal, sm + ds, dm + dd, 0.05, 0.4, 0.4, 5, A);
-    for (const ds of [-15, 0, 15]) {
-      W.obox(geo.lamp, sm + ds, dm, 4.95, 6, 1.2, 0.06, A);
+    const dm = NEAR + 14;
+    const col = (c) => { geo.colored.col = c; return geo.colored; };
+    // painted bays on the slab
+    for (const ds of [-15, -5, 5, 15]) W.obox(col('#e8e4da'), sm + ds, NEAR + 8.4, 0.05, 0.12, 2.6, 0.02, A);
+    // canopy: white soffit, red fascia with a white stripe, columns on the islands
+    W.obox(geo.canopy, sm, dm, 5.0, 30, 11, 0.6, A);
+    W.obox(col('#c62a25'), sm, dm, 5.6, 30.4, 11.4, 0.55, A);
+    W.obox(col('#f2efe6'), sm, dm, 5.78, 30.5, 11.5, 0.14, A);
+    for (const [ps, pd] of this.pumps) W.obox(geo.metal, ps + 2.0, pd, 0.25, 0.32, 0.32, 4.8, A);
+    for (const ds of [-10, 0, 10]) {
+      W.obox(geo.lamp, sm + ds, dm, 4.97, 5, 1.1, 0.05, A);
       const p = P.point(sm + ds, dm, 4.8);
       lights.push({ x: p.x, y: p.y, z: p.z, r: 1, g: 0.95, b: 0.85, power: 0.7, always: 1 });
     }
-    // pumps
+    // canopy signs (both long sides)
+    const fz = tk.frame(sm);
+    for (const side of [-1, 1]) {
+      const p = tk.pt(fz, 0, dm + side * 5.78, 5.62);
+      tk.face(geo.tkSign, p, side * fz.rx, side * fz.rz, 7.2, 0.5, ATLAS.hsign(3 + (side > 0 ? 4 : 0)));
+    }
+    // pump islands: kerbed island, dispenser with a lit display, hoses, bollards
     for (const [ps, pd] of this.pumps) {
       W.obox(geo.concrete, ps, pd, 0.05, 5, 1.2, 0.2, A);
       this.obstacles.push({ s: ps, d: pd, L: 5, W: 1.2, kind: 'island' });
-      geo.colored.col = '#e8e4da';
-      W.obox(geo.colored, ps, pd, 0.25, 0.9, 0.6, 1.6, A);
-      geo.colored.col = '#c62a25';
-      W.obox(geo.colored, ps, pd, 1.6, 0.92, 0.62, 0.3, A);
-      const p = P.point(ps, pd - 0.32, 1.2);
-      glows.push({ x: p.x, y: p.y, z: p.z, r: 0.4, g: 1.2, b: 0.6, size: 0.35, always: 1 });
+      for (const dd of [-0.3, 0.3]) {
+        W.obox(col('#e8e4da'), ps, pd + dd * 0.01, 0.25, 0.9, 0.55, 1.55, A);
+      }
+      W.obox(col('#c62a25'), ps, pd, 1.8, 0.94, 0.6, 0.32, A);
+      W.obox(col('#1c1d22'), ps - 0.62, pd, 0.6, 0.08, 0.08, 0.9, A); // hose
+      W.obox(col('#1c1d22'), ps + 0.62, pd, 0.6, 0.08, 0.08, 0.9, A);
+      W.obox(col('#e8b020'), ps - 2.3, pd, 0.25, 0.22, 0.22, 0.8, A); // bollards
+      W.obox(col('#e8b020'), ps + 2.3, pd, 0.25, 0.22, 0.22, 0.8, A);
+      for (const dd of [-0.31, 0.31]) {
+        const p = P.point(ps, pd + dd, 1.35);
+        glows.push({ x: p.x, y: p.y, z: p.z, r: 0.4, g: 1.2, b: 0.6, size: 0.3, always: 1 });
+      }
     }
-    // shop behind the pumps
-    W.boxBuilding(geo.building, sm, fc.d1 + 5, -0.5, 30, 10, 4.6, A, 0, 0);
-    this.obstacles.push({ s: sm, d: fc.d1 + 5, L: 30, W: 10, kind: 'building' });
-    W.shopFront(geo.shop, sm, fc.d1 - 0.12, 0, 30, 1, A, 0.25);
-    // tall price sign at the street
-    W.obox(geo.metal, fc.s0 + 4, NEAR + ST_HW + 1.5, 0.05, 0.3, 0.3, 7, A);
-    geo.colored.col = '#1d2c55';
-    W.obox(geo.colored, fc.s0 + 4, NEAR + ST_HW + 1.5, 7, 0.4, 2.6, 2.2, A);
-    const p = P.point(fc.s0 + 4, NEAR + ST_HW + 0.9, 8.1);
-    glows.push({ x: p.x, y: p.y, z: p.z, r: 1.3, g: 1.0, b: 0.3, size: 1.2, always: 1 });
+    // kiosk shop behind the forecourt, facing it
+    tk.shopHouse(fc.s0 + 13, 22, fc.d1, 1, 0.02, { floors: 1, depth: 8, shop: true, signs: 0 });
+    // car wash bay: roof on two side walls, blue brush rollers, a sign
+    const ws = fc.s1 - 8, wd = fc.d1 + 4.5;
+    W.obox(col('#d8d4c8'), ws - 3.4, wd, 0.02, 0.3, 8, 3.6, A);
+    W.obox(col('#d8d4c8'), ws + 3.4, wd, 0.02, 0.3, 8, 3.6, A);
+    W.obox(col('#2a5ab0'), ws, wd, 3.6, 7.4, 8.4, 0.5, A);
+    W.obox(col('#3a7ad8'), ws - 2.2, wd + 1, 0.3, 0.7, 0.7, 2.6, A);
+    W.obox(col('#3a7ad8'), ws + 2.2, wd + 1, 0.3, 0.7, 0.7, 2.6, A);
+    this.obstacles.push({ s: ws - 3.4, d: wd, L: 0.4, W: 8, kind: 'wall' }, { s: ws + 3.4, d: wd, L: 0.4, W: 8, kind: 'wall' });
+    // a parked van in the wash bay
+    const van = makeCar('van', '#e4dfd2', true);
+    const pv = P.point(ws, wd + 0.5, 0), fv = P.sample(ws, {});
+    van.group.position.set(pv.x - A.x, pv.y - A.y, pv.z - A.z);
+    van.group.rotation.y = fv.h + Math.PI / 2;
+    van.group.traverse((o) => { if (o.isMesh) o.userData.shared = true; });
+    this.extra = this.extra || [];
+    this.extra.push(van.group);
+    this.obstacles.push({ s: ws, d: wd + 0.5, L: 2.1, W: 5.4, kind: 'car' });
+    // air / water stand, oil rack, ice chest, bins, vending machines, planters
+    const fs0 = tk.frame(fc.s0 + 3);
+    W.obox(col('#c62a25'), fc.s0 + 3, NEAR + 20, 0.02, 0.5, 0.4, 1.3, A);
+    W.obox(col('#e8e4da'), fc.s0 + 5, NEAR + 20.6, 0.02, 1.6, 0.5, 1.2, A); // oil rack
+    for (let i = 0; i < 4; i++) W.obox(col(['#e8b020', '#c62a25', '#2a5ab0', '#2a7a4a'][i]), fc.s0 + 4.4 + i * 0.4, NEAR + 20.3, 0.5 + (i % 2) * 0.4, 0.25, 0.2, 0.3, A);
+    W.obox(col('#3a7ad8'), fc.s0 + 25, fc.d1 - 0.6, 0.02, 1.4, 0.8, 1.0, A); // ice chest
+    tk.vending(fs0, 25, fc.d1, 1, 0.02);
+    tk.vending(fs0, 26, fc.d1, 1, 0.02);
+    for (const [i, c] of ['#2a5ab0', '#d8a030', '#2a7a4a'].entries()) W.obox(col(c), fc.s0 + 2 + i * 0.6, NEAR + 7, 0.02, 0.5, 0.5, 0.9, A);
+    for (const ds of [-22, 22]) tk.bush(sm + ds, NEAR + ST_HW + 1.2, 0.3, 0.7, 1.0);
+    // tall price tower at the street corner
+    const ts = fc.s0 + 2, td = NEAR + ST_HW + 1.3;
+    W.obox(geo.metal, ts, td, 0.05, 0.4, 0.4, 6.2, A);
+    W.obox(col('#c62a25'), ts, td, 6.2, 0.5, 2.6, 1.4, A);
+    W.obox(col('#1d2c55'), ts, td, 7.6, 0.5, 2.6, 2.2, A);
+    const ft = tk.frame(ts);
+    for (const side of [-1, 1]) {
+      const p = tk.pt(ft, side * 0.27, td, 7.75);
+      tk.face(geo.tkSign, p, side * ft.fx, side * ft.fz, 2.4, 1.9, ATLAS.vsign(5));
+    }
+    const p = P.point(ts - 0.4, td, 8.6);
+    glows.push({ x: p.x, y: p.y, z: p.z, r: 1.3, g: 1.0, b: 0.3, size: 1.0, always: 1 });
+    this.obstacles.push({ s: ts, d: td, L: 0.6, W: 2.6, kind: 'sign' });
   }
 
   render(origin, glows, night, time) {

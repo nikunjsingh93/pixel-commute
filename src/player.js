@@ -156,6 +156,12 @@ export class Player {
   // ----------------------------------------------------------------- update
   update(dt, input, traffic) {
     const V = this.veh;
+    // manual gearbox (never while the autopilot drives)
+    const man = this.manual && !this.auto;
+    if (V.manual !== man) {
+      V.manual = man;
+      if (!man && V.gear === 0) V.gear = 1;
+    }
     let throttle = input.throttle, brake = input.brake, steer, hb = input.handbrake || 0;
     if (input.any && input.manualOverride) this.auto = false;
     if (this.auto) {
@@ -500,6 +506,7 @@ export class Player {
 
   gearLabel() {
     const V = this.veh;
+    if (V.manual) return V.gear < 0 ? 'R' : V.gear === 0 ? 'N' : 'M' + V.gear;
     if (V.gear < 0) return 'R';
     if (Math.abs(V.fwdSpeed) < 0.3 && V.throttle < 0.05) return 'N';
     return String(V.gear);
