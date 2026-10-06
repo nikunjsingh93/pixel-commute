@@ -154,7 +154,11 @@ export class Player {
       this.mesh.add(w.pivot);
     }
     const cockpitVisible = this.cockpit ? this.cockpit.group.visible : false;
-    this.cockpit = new Cockpit(def.cockpit);
+    // taken trucks and buses: the driver sits up front in the cab
+    let ck = def.cockpit;
+    if (model === 'truck') ck = { dy: 1.05, dz: t.L / 2 - 1.15 + 0.22 };
+    else if (model === 'bus') ck = { dy: 0.75, dz: t.L / 2 - 1.35 + 0.22 };
+    this.cockpit = new Cockpit(ck);
     this.cockpit.setVisible(cockpitVisible);
     this.inner.add(this.cockpit.group, this.cockpit.exterior);
     this.root.add(this.mesh);

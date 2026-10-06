@@ -315,7 +315,7 @@ function build(type, color, opts = {}) {
     B.box(-hw, hw, 1.0, H, zr, zf - cab - 0.2, '#d9d6cc', { side: '#c4c0b4', rear: '#bdb8aa' });
     B.box(-hw + 0.1, hw - 0.1, 0.55, 1.0, zr, zf - cab, '#25272c');
     B.tbox(hw - 0.05, hw - 0.15, 0.55, H - 0.6, zf - cab, zf, zf - cab, zf - 0.4, color, { side: shade });
-    B.tbox(hw - 0.1, hw - 0.2, 1.8, H - 0.65, zf - 0.4, zf + 0.01, zf - 0.5, zf - 0.38, GLASS);
+    B.tbox(hw - 0.1, hw - 0.2, 1.8, H - 0.65, zf - 0.4, zf + 0.01, zf - 0.5, zf - 0.38, GLASS, { noRear: true }); // windscreen (open toward the cab)
     B.box(-hw, hw, 0.95, 1.05, zr - 0.1, zr, '#a33a2a'); // ICC bar
     b.head.box(-0.2, 0.2, 0.7, 0.82, zr - 0.08, zr - 0.04, '#6e5a1c');
     tail = { y: 0.95, h: 0.18 };
@@ -326,7 +326,7 @@ function build(type, color, opts = {}) {
     B.box(-hw, hw, 0.45, H, zr, zf, color, { side: shade, rear: dark });
     B.box(-hw - 0.01, hw + 0.01, 1.4, 2.4, zr + 0.6, zf - 0.8, GLASS);
     B.box(-hw + 0.15, hw - 0.15, 1.6, 2.5, zr - 0.02, zr + 0.01, '#2a3142');
-    B.box(-hw + 0.1, hw - 0.1, 1.0, 2.7, zf - 0.01, zf + 0.02, GLASS);
+    B.box(-hw + 0.1, hw - 0.1, 1.0, 2.7, zf - 0.01, zf + 0.02, GLASS, { noRear: true }); // windscreen (seen from the driver's seat too)
     b.head.box(-0.26, 0.26, 0.6, 0.74, zr - 0.06, zr - 0.02, '#6e5a1c');
     tail = { y: 0.8, h: 0.3 };
     head = { y: 0.75, h: 0.16 };
