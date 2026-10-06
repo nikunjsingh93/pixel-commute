@@ -56,7 +56,7 @@ export class Foot {
     P.onFoot = true;
     P.auto = false;
     this.locate();
-    this.g.hud.say('ON FOOT · F GET IN A CAR', 2.2);
+    this.g.hud.say('ON FOOT', 1.6);
     return true;
   }
 

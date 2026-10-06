@@ -894,7 +894,7 @@ function step(dt) {
     const cz = planner.at(player.s, 'city', 0);
     const dn = cz ? cz.name : planner.district(player.s).name;
     if (dn !== lastDistrict) {
-      if (lastDistrict && st.mode === 'drive') hud.say(cz ? cz.name + ' · EXIT RIGHT · F TO WALK' : dn, cz ? 3.5 : 2.2);
+      if (lastDistrict && st.mode === 'drive') hud.say(cz ? cz.name + ' · EXIT RIGHT · ' + (st.touch ? 'EXIT CAR' : 'F') + ' TO WALK' : dn, cz ? 3.5 : 2.2);
       lastDistrict = dn;
     }
   }
@@ -1018,7 +1018,7 @@ function render(dt) {
 
   pipe.render(scene, camera);
   hud.draw({
-    onFoot: foot.active, prompt: foot.active ? foot.prompt : '',
+    onFoot: foot.active, prompt: foot.active ? (st.touch ? foot.prompt.replace(/^F  /, 'ACT  ').replace('(F LEAVE)', '(ACT LEAVE)').replace(/· F /g, '· ACT ') : foot.prompt) : '',
     mode: st.mode, hour: st.hour, period: look.name, weather: W.name, odo: player.odo, closeCalls: player.closeCalls,
     speed: player.v, vmax: VMAX, auto: player.auto, music: audio.ctx && audio.music, stationName: radio.label(),
     commute: st.mode === 'drive' ? commute.hudState() : null,
