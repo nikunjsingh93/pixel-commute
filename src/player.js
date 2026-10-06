@@ -40,6 +40,10 @@ class RoadGround {
   }
   ground(x, z, out) {
     const p = this.project(x, z, this.g);
+    if (this.world) {
+      const cn = this.world.netAt(p.s);
+      if (cn && cn.city) return cn.groundAbs(p.s - cn.S, p.d, out.refY, out);
+    }
     let h = p.y;
     let surf = 0;
     const net = this.world && p.d > ROAD_R ? this.world.netAt(p.s) : null;
@@ -97,10 +101,21 @@ export class Player {
     this.sel = { ...sel };
     this.def = def;
     const old = this.veh;
-    // the spec's hull follows the car's size (player cars get +0.16 m of headroom)
-    const t = TYPES[def.model];
-    const spec = specFor(def, { L: t.L, W: t.W, H: t.H + 0.16 });
-    const car = makePlayerCar(def.model, sel.paint, [spec.wheelbase / 2, -spec.wheelbase / 2], plateTexture(sel.plate, font));
+    // the spec's hull follows the car's size (player cars get +0.16 m of headroom);
+    // a taken traffic car keeps its own body (sel.model) on borrowed physics
+    const model = sel.model || def.model;
+    const t = TYPES[model];
+    let spec = specFor(def, { L: t.L, W: t.W, H: t.H + 0.16 });
+    if (model === 'truck' || model === 'bus') {
+      const k = t.L / 5.3;
+      spec = {
+        ...spec, wheelbase: t.L * 0.58, track: t.W - 0.3, mass: 2350 * k * 1.4, comH: 1.05,
+        inertia: spec.inertia.clone().multiplyScalar(k * k * 1.6), maxTorque: 430 * k, brakeTorque: 4400 * k,
+        kF: 52000 * k, kR: 62000 * k, cBump: 4200 * k, cReb: 6200 * k, radius: 0.5,
+      };
+      spec.hull = specFor(def, { L: t.L, W: t.W, H: t.H }).hull.map(([x, y, z]) => [x, y + 0.85 - 1.05, z]);
+    }
+    const car = makePlayerCar(model, sel.paint, [spec.wheelbase / 2, -spec.wheelbase / 2], plateTexture(sel.plate, font));
     this.veh = new Vehicle(this.groundP, spec);
     if (old && keepState) {
       this.veh.pos.copy(old.pos);
@@ -192,9 +207,16 @@ export class Player {
     this.latV = V.vel.x * pr.rx + V.vel.z * pr.rz;
     this.heading = Math.atan2(V.fwd.x, V.fwd.z);
 
+    // which level we are on in a city zone (expressway deck, ramp, streets)
+    const cn = this.world ? this.world.netAt(this.s) : null;
+    this.layer = cn && cn.city ? cn.layerAt(this.s - cn.S, this.d, V.pos.y - V.spec.comH) : 'hw';
+    // (ramps count as the expressway until the car is down in the city)
+    this.offHighway = this.layer === 'city';
+    if (this.offHighway && this.auto) this.auto = false;
+
     this.scrape = Math.max(0, this.scrape - dt * 3);
     this.barriers();
-    this.collideTraffic(traffic);
+    if (!this.offHighway) this.collideTraffic(traffic);
     this.collideStatic();
 
     const tb = V.brake > 0.1 || (V.gear < 0 && V.throttle > 0.1) ? 1 : 0;
@@ -202,8 +224,8 @@ export class Player {
 
     // never get stuck: flipped, or somehow outside the walls
     const net = this.world ? this.world.netAt(this.s) : null;
-    const offRoad = this.d > WALL_D + 2 && !(net && (net.contains(this.s, this.d) || net.pushOut(this.s, this.d).pen < 6));
-    const lost = V.up.y < 0.35 || this.d < ROAD_L - 3 || offRoad;
+    const offRoad = net && net.city ? false : this.d > WALL_D + 2 && !(net && (net.contains(this.s, this.d) || net.pushOut(this.s, this.d).pen < 6));
+    const lost = V.up.y < 0.35 || (this.d < ROAD_L - 3 && this.layer === 'hw' && !(net && net.city)) || offRoad;
     this.stuck = lost ? this.stuck + dt : 0;
     if (this.stuck > 2.5) {
       this.stuck = 0;
@@ -217,7 +239,12 @@ export class Player {
   // the nearest highway lane
   respawn(net) {
     const V = this.veh;
-    if (net && this.d > ROAD_R + 0.5) {
+    if (net && net.city && this.layer !== 'city') {
+      // back onto the expressway deck
+      this.place(this.s, LANE_D[this.nearestLane()], 10);
+      return;
+    }
+    if (net && (this.d > ROAD_R + 0.5 || net.city)) {
       const p = net.nearestLane(this.s, this.d);
       const f = this.path.sample(p.s, {});
       // lane direction in road space; ramps keep their own direction, streets
@@ -228,6 +255,7 @@ export class Player {
       const off = p.twoWay ? 1.9 : 0;
       const s = p.s - td * off, d = p.d + ts * off;
       const q = this.path.point(s, d, 0);
+      if (net.city) q.y = net.groundAbs(s - net.S, d, undefined);
       V.placeAt(q.x, q.y, q.z, f.fx * ts + f.rx * td, f.fz * ts + f.rz * td, 0);
       this.groundP.hint = s;
       this.s = s;
@@ -254,6 +282,7 @@ export class Player {
 
   barriers() {
     const V = this.veh, P = this._p, n = this._n, vp = this._vp, t = this._t;
+    if (this.layer === 'city') return this.cityBarriers();
     const minD = ROAD_L - 0.04; // median barrier face
     const guard = GUARD_R - 0.04; // guard rail (the wall, where there is one, sits behind it)
     for (let i = 0; i < 4; i++) {
@@ -295,6 +324,25 @@ export class Player {
     }
   }
 
+  // down in a city: keep inside the zone (buildings etc. are obstacles)
+  cityBarriers() {
+    const V = this.veh, P = this._p, n = this._n, vp = this._vp;
+    const net = this.world.netAt(this.s);
+    if (!net || !net.city) return;
+    for (let i = 0; i < 4; i++) {
+      this.corner(i, P);
+      const q = this.groundP.project(P.x, P.z, this._cq);
+      const { du, dv } = net.cityPush(q.s - net.S, q.d);
+      const pen = Math.hypot(du, dv);
+      if (pen < 1e-4) continue;
+      n.set((q.fx * du + q.rx * dv) / pen, 0, (q.fz * du + q.rz * dv) / pen);
+      V.pos.addScaledVector(n, Math.min(pen, 0.5));
+      V.pointVel(P, vp);
+      const vn = vp.dot(n);
+      if (vn < 0) V.applyImpulse(P, n, (-1.2 * vn) / V.invMassAt(P, n));
+    }
+  }
+
   collideTraffic(traffic) {
     const V = this.veh, P = this._p, n = this._n, vp = this._vp;
     // player box axes (horizontal)
@@ -332,14 +380,17 @@ export class Player {
   collideStatic() {
     const W = this.world;
     if (!W) return;
+    const feet = this.veh.pos.y - this.veh.spec.comH;
     for (const ob of W.allObstacles()) {
       if (Math.abs(ob.s - this.s) > ob.L / 2 + 6 || Math.abs(ob.d - this.d) > ob.W / 2 + 4) continue;
+      if (ob.y1 !== undefined && (feet > ob.y1 - 0.2 || feet + 1.4 < ob.y0)) continue;
       const worst = this.collideBox(ob, 1e12, false);
       if (worst > 0.6) this.hit(worst / 9, 'wall');
     }
     for (const net of W.nets.values()) {
       for (const c of net.cars) {
         if (Math.abs(c.s - this.s) > 12 || Math.abs(c.d - this.d) > 12) continue;
+        if (c.y !== undefined && Math.abs(c.y - feet) > 2) continue;
         const worst = this.collideBox(c, 1500, false);
         if (worst > 0.6) this.hit(worst / 9, 'car');
       }

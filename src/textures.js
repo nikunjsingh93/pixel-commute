@@ -214,9 +214,10 @@ export function signTexture(lines, font) {
   g.fillRect(1, 1, W - 2, H - 2);
   g.fillStyle = '#e8e8e0';
   lines.forEach((ln, i) => {
-    const sc = i === 0 ? 2 : 1;
+    // the big top line drops to the small size when it would not fit
+    const sc = i === 0 && font.measure(ln) * 2 <= W - 4 ? 2 : 1;
     const w = font.measure(ln) * sc;
-    font.draw(g, ln, ((W - w) / 2) | 0, 4 + i * 14, sc, '#e8e8e0');
+    font.draw(g, ln, ((W - w) / 2) | 0, (i === 0 && sc === 1 ? 7 : 4) + i * 14, sc, '#e8e8e0');
   });
   const t = tex(c, { repeat: false });
   t.minFilter = THREE.NearestFilter;

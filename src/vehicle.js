@@ -434,6 +434,7 @@ export class Vehicle {
   _raycast(org, up, maxLen) {
     const dy = up.y;
     if (dy < 0.25) return -1;
+    this.gh.refY = org.y; // layered ground (viaduct over city streets) picks the level below
     let t = Math.max(org.y - this.ground(org.x, org.z, this.gh), 0) / dy;
     for (let i = 0; i < 3; i++) {
       const px = org.x - up.x * t, pz = org.z - up.z * t, py = org.y - up.y * t;

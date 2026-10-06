@@ -11,7 +11,20 @@ export const EXIT_NAMES = [
 ];
 
 // feature lengths along s (metres)
-const LEN = { exit: 560, works: 300, tunnel: 520, toll: 120, harbor: 820 };
+const LEN = { exit: 560, works: 300, tunnel: 520, toll: 120, harbor: 820, city: 2000 };
+// a city zone: the road is straightened and levelled CITY_PAD metres either
+// side, and inside it rises onto a viaduct DECK_H above the city streets
+export const CITY_PAD = 300;
+export const CITY_RAMP = 300;
+export const DECK_H = 9;
+const ss = (a, b, x) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+// viaduct height above the city ground at u metres into the zone
+export function deckAt(f, u) {
+  return DECK_H * ss(0, CITY_RAMP, u) * (1 - ss(f.s1 - f.s0 - CITY_RAMP, f.s1 - f.s0, u));
+}
 
 export class Planner {
   constructor(seed) {
@@ -46,12 +59,14 @@ export class Planner {
     const i = this.n++;
     const R = (k) => hash(this.seed * 7.13 + i * 17.3 + k * 3.7);
     // the first few showcase every feature, then it is random by district
-    const intro = ['exit', 'works', 'tunnel', 'exit', 'toll', 'harbor'];
+    const intro = ['city', 'exit', 'works', 'tunnel', 'exit', 'toll', 'harbor'];
     const s0 = this.end + 420 + R(1) * 700;
     let type = intro[i];
     if (!type) {
       const d = this.district(s0);
+      const lastCity = [...this.features].reverse().find((x) => x.type === 'city');
       const w = {
+        city: lastCity && s0 - lastCity.s1 > 9000 ? 0.12 * d.town : 0,
         exit: 0.34 * (0.3 + d.town),
         works: 0.18,
         tunnel: 0.16 * (1.4 - d.downtown),
@@ -81,6 +96,12 @@ export class Planner {
       f.fuel = i === 0 || R(5) < 0.7; // most exits have a petrol station
     }
     if (type === 'works') f.lane = 3; // the right-hand lane is closed
+    if (type === 'city') {
+      f.name = ['NEO TOKYO', 'PIXEL CITY', 'MINATO', 'SHINJUKU'][this.nCity = (this.nCity || 0) + 1, (this.nCity - 1) % 4];
+      this.end = f.s1 + CITY_PAD; // keep the levelled approach clear of other features
+      this.features.push(f);
+      return;
+    }
     this.features.push(f);
     this.end = f.s1;
   }
@@ -126,6 +147,21 @@ export class Planner {
     if (f && lane === f.lane) return true;
     const g = this.at(s + 140, 'works', 0);
     return !!(g && lane === g.lane && s > g.s0 - 140);
+  }
+
+  // road shaping for the Path: straight + level around city zones
+  // returns null or { k: 0..1 blend, y: target height }
+  shape(s, path) {
+    this.ensure(s + CITY_PAD + 50);
+    for (const f of this.features) {
+      if (f.type !== 'city' || s < f.s0 - CITY_PAD || s > f.s1 + CITY_PAD) continue;
+      if (f.base === undefined) f.base = path.naturalHeight(f.s0);
+      const k = ss(f.s0 - CITY_PAD, f.s0, s) * (1 - ss(f.s1, f.s1 + CITY_PAD, s));
+      // outside the zone: blend toward the zone's base height
+      const y = s < f.s0 || s > f.s1 ? f.base : f.base + deckAt(f, s - f.s0);
+      return { k, y };
+    }
+    return null;
   }
 
   // traffic keeps its lane through toll plazas

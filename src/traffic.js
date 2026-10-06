@@ -30,7 +30,7 @@ export class Traffic {
     const m = makeCar(type, color);
     this.root.add(m.group);
     return {
-      mesh: m.group, tailMat: m.tailMat, dims: m.dims, type,
+      mesh: m.group, tailMat: m.tailMat, dims: m.dims, type, color,
       L: m.dims.L, W: m.dims.W, dir,
       s: 0, d: 0, lane: 0, target: 0, v: 20, v0: 24, acc: 0, brake: 0,
       blink: 0, blinkSide: 0, cool: rnd() * 5, passed: false,
@@ -132,7 +132,11 @@ export class Traffic {
     return Math.max(-9, AMAX * (1 - Math.pow(v / v0, 4) - (sStar / gap) ** 2));
   }
 
-  update(dt, player) {
+  update(dt, playerIn) {
+    // a player down in a city (or on foot) is not on the expressway
+    // (traffic keeps flowing around them but nobody brakes for them)
+    const away = playerIn.offHighway || playerIn.onFoot;
+    const player = away ? { s: playerIn.s, d: 1e9, v: playerIn.v, L: playerIn.L, W: playerIn.W } : playerIn;
     this.player = player;
     const pS = player.s;
     for (const c of this.cars) {

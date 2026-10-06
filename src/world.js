@@ -10,6 +10,10 @@ import { font } from './font.js';
 import { buildTunnel, buildHarbor, buildWorks, buildToll } from './features.js';
 import { ExitNet } from './exits.js';
 import { Tokyo, tokyoMaterials, tokyoNight } from './tokyo.js';
+import { CityNet, cityLayout } from './city.js';
+import './city2.js';
+import './city3.js';
+import { buildViaduct } from './citybuild.js';
 
 export const CHUNK = 64;
 const DS = 4; // geometry step along the road
@@ -359,8 +363,17 @@ export class World {
         if (!all) return; // one heavy build per frame
       }
     }
+    // city zones: created well ahead (they are visible from afar), streamed
+    // by themselves, dropped once far behind
+    for (const f of this.planner.range(camS - 1500, camS + 1700, 'city')) {
+      if (!this.nets.has(f.id)) {
+        this.nets.set(f.id, new CityNet(this, f, GeoB));
+        if (!all) return;
+      }
+    }
     for (const [id, net] of this.nets) {
-      if (net.s1 < camS - 300 || net.s0 > camS + 1000) {
+      const far = net.city ? net.s1 < camS - 1600 || net.s0 > camS + 1900 : net.s1 < camS - 300 || net.s0 > camS + 1000;
+      if (far) {
         net.dispose(this.root);
         this.nets.delete(id);
       }
@@ -383,6 +396,11 @@ export class World {
       ch.group.position.set(ch.anchor.x - this.origin.x, ch.anchor.y - this.origin.y, ch.anchor.z - this.origin.z);
     }
     for (const n of this.nets.values()) n.rebase(this.origin);
+    for (const p of this.parked || []) {
+      p.mesh.position.x -= dx;
+      p.mesh.position.y -= dy;
+      p.mesh.position.z -= dz;
+    }
   }
 
   // height of the right-hand retaining wall at s: mostly 0 (open city with a
@@ -451,18 +469,19 @@ export class World {
 
   // a conifer: a thin trunk and five or six drooping tiers whose outline is
   // a ragged star (needle clumps), dark underneath and lighter toward the top
-  tree(geo, s, d, base, a, r) {
+  // lod 1: a lighter tree for big distant forests (3 tiers, 6 points, no trunk box)
+  tree(geo, s, d, base, a, r, lod = 0) {
     const k = 0.85 + r * 0.45;
     const p = this.path.point(s, d, base);
     const c = [p.x - a.x, p.y - a.y, p.z - a.z];
     const r2 = (r * 7.31) % 1, r3 = (r * 13.7) % 1;
     const slim = 0.8 + r2 * 0.35;
-    const tiers = 5 + (r3 < 0.5 ? 1 : 0);
+    const tiers = lod ? 3 : 5 + (r3 < 0.5 ? 1 : 0);
     const H = (6.2 + r * 2.2) * k;
     // greens per tree: a little bluer or more olive
     // (linear colour values: deep spruce greens)
     const hue = r3 < 0.33 ? [0.03, 0.095, 0.05] : r3 < 0.66 ? [0.042, 0.1, 0.038] : [0.028, 0.082, 0.064];
-    this.obox(geo.dark, s, d, base, 0.18 * k, 0.18 * k, 1.6 * k, a);
+    if (!lod) this.obox(geo.dark, s, d, base, 0.18 * k, 0.18 * k, 1.6 * k, a);
     for (let t = 0; t < tiers; t++) {
       const u = t / (tiers - 1);
       const y0 = (1.0 + u * (H / k - 3.1)) * k;
@@ -470,7 +489,7 @@ export class World {
       const h = (2.1 - 0.7 * u) * k;
       const lift = 0.8 + 0.6 * u; // lighter toward the top
       const top = [hue[0] * lift, hue[1] * lift, hue[2] * lift];
-      this.needleTier(geo.leaf, [c[0], c[1] + y0, c[2]], rad, h, 9, r * 6 + t * 0.9, top, 0.32 * k);
+      this.needleTier(geo.leaf, [c[0], c[1] + y0 - (lod ? 0.6 * k : 0), c[2]], rad * (lod ? 1.1 : 1), h * (lod ? 1.25 : 1), lod ? 6 : 9, r * 6 + t * 0.9, top, 0.32 * k);
     }
   }
 
@@ -523,7 +542,7 @@ export class World {
     const P = this.planner;
     const feats = P.range(s0 - 420, s1 + 20);
     // land = the parts of this chunk not covered by a tunnel or the harbour
-    const holes = feats.filter((f) => f.type === 'tunnel' || f.type === 'harbor');
+    const holes = feats.filter((f) => f.type === 'tunnel' || f.type === 'harbor' || f.type === 'city');
     const isLand = (s) => !holes.some((f) => s >= f.s0 && s <= f.s1);
     const inTunnel = (s) => feats.some((f) => f.type === 'tunnel' && s >= f.s0 && s <= f.s1);
     let land = [[s0, s1]];
@@ -710,7 +729,8 @@ export class World {
 
     // planner features
     for (const f of feats) {
-      if (f.type === 'tunnel') buildTunnel(this, f, c);
+      if (f.type === 'city') buildViaduct(this, f, c, cityLayout(f));
+      else if (f.type === 'tunnel') buildTunnel(this, f, c);
       else if (f.type === 'harbor') buildHarbor(this, f, c);
       else if (f.type === 'works') buildWorks(this, f, c);
       else if (f.type === 'toll') buildToll(this, f, c);
@@ -1093,7 +1113,8 @@ export class World {
   }
   *allObstacles() {
     for (const ch of this.chunks.values()) yield* ch.obstacles;
-    for (const n of this.nets.values()) yield* n.obstacles;
+    for (const n of this.nets.values()) yield* (n.obstaclesAll || n.obstacles);
+    if (this.parked) yield* this.parked;
   }
   *allChunks() {
     yield* this.chunks.values();

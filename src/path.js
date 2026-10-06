@@ -36,11 +36,20 @@ export class Path {
     // long sweeping bends with straights in between (radius >= ~260 m)
     const n = vnoise(s / 520, this.seed) * 0.7 + vnoise(s / 210, this.seed + 7) * 0.3;
     const shaped = Math.sign(n) * Math.max(0, Math.abs(n) - 0.12) / 0.88;
-    return shaped * 0.0038;
+    const c = shaped * 0.0038;
+    // a shaper (the planner) can straighten and level the road (city zones)
+    const sh = this.shape ? this.shape(s) : null;
+    return sh ? c * (1 - sh.k) : c;
+  }
+
+  naturalHeight(s) {
+    return vnoise(s / 380, this.seed + 3) * 7 + vnoise(s / 140, this.seed + 9) * 1.6;
   }
 
   height(s) {
-    return vnoise(s / 380, this.seed + 3) * 7 + vnoise(s / 140, this.seed + 9) * 1.6;
+    const n = this.naturalHeight(s);
+    const sh = this.shape ? this.shape(s) : null;
+    return sh ? n + (sh.y - n) * sh.k : n;
   }
 
   get end() {

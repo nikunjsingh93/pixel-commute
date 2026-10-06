@@ -17,6 +17,7 @@ import { Hud } from './hud.js';
 import { Audio } from './audio.js';
 import { Radio, STATIONS } from './radio.js';
 import { Commute } from './goals.js';
+import { Foot } from './foot.js';
 import { Panel, button, esc } from './ui.js';
 
 const params = new URLSearchParams(location.search);
@@ -50,6 +51,7 @@ const pipe = new PixelPipeline(renderer);
 pipe.post.uniforms.mode.value = Number(params.get('pal') ?? loadPref('palette') ?? 2);
 const path = new Path(Number(params.get('seed') || 7));
 const planner = new Planner(Number(params.get('seed') || 7));
+path.shape = (s) => planner.shape(s, path);
 const world = new World(scene, path, planner);
 const sky = new Sky(scene);
 const glows = new Glows(scene);
@@ -79,6 +81,7 @@ function startAudio() {
 }
 // commute mode (jobs, fuel, tolls, milestones); zen mode is the plain drive
 const commute = new Commute({ planner, world, player, path, hud, audio });
+let foot = null; // on foot (set up with the menus below)
 
 // player headlights + a soft red glow behind the car
 const headlight = new THREE.SpotLight(0xfff0d0, 0, 90, 0.5, 0.6, 1.2);
@@ -300,6 +303,14 @@ function runAction(k) {
     case 'KeyU':
       hud.visible = !hud.visible;
       break;
+    case 'KeyF':
+      // on foot <-> in a car; on foot it is the action key (cars, metro, cable car)
+      if (foot.active) foot.action();
+      else foot.leaveCar();
+      break;
+    case 'KeyRun':
+      foot.run = !foot.run;
+      break;
     case 'KeyX':
       player.manual = !player.manual;
       savePref('gearbox', player.manual ? 'manual' : 'auto');
@@ -351,7 +362,10 @@ function enableTouch() {
     keys,
     press: (code) => action(code),
     driving: () => st.mode === 'drive' && !st.paused && !photo.active && !anyPanelOpen(),
-    manual: () => player.manual && !player.auto,
+    manual: () => player.manual && !player.auto && !(foot && foot.active),
+    onFoot: () => !!(foot && foot.active),
+    stick: (x, y) => { if (foot) { foot.stick.x = x; foot.stick.y = y; } },
+    running: () => !!(foot && foot.run),
   });
 }
 
@@ -508,6 +522,9 @@ setInterval(() => {
   helpX.style.display = hud.help && !st.paused && !anyPanelOpen() ? '' : 'none';
 }, 100);
 
+// ------------------------------------------------------------------ on foot
+foot = new Foot({ world, player, traffic, camera, keys, hud, audio });
+
 // ------------------------------------------------------------------ photo mode
 const photo = new PhotoMode({
   keys,
@@ -602,7 +619,16 @@ function lookBy(mx, my) {
 }
 window.addEventListener('mousemove', (e) => {
   if (!lookAllowed() || (!e.movementX && !e.movementY)) return;
-  lookBy(e.movementX, e.movementY);
+  if (foot.active) foot.look(e.movementX, e.movementY);
+  else lookBy(e.movementX, e.movementY);
+});
+// on foot with a mouse: click to capture it for free looking (Esc releases)
+window.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'mouse' || !foot || !foot.active || !lookAllowed() || st.touch) return;
+  if (e.target.closest && e.target.closest('.pb, .ui-panel, .ui-menu')) return;
+  if (document.pointerLockElement !== glCanvas && glCanvas.requestPointerLock) {
+    try { const p = glCanvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (err) { /* needs a gesture */ }
+  }
 });
 // touch screens: swipe on the picture (not on a button) to look around
 const swipes = new Map();
@@ -614,7 +640,10 @@ window.addEventListener('pointerdown', (e) => {
 window.addEventListener('pointermove', (e) => {
   const p = swipes.get(e.pointerId);
   if (!p) return;
-  if (lookAllowed()) lookBy((e.clientX - p.x) * 0.9, (e.clientY - p.y) * 0.9);
+  if (lookAllowed()) {
+    if (foot.active) foot.look((e.clientX - p.x) * 1.6, (e.clientY - p.y) * 1.6);
+    else lookBy((e.clientX - p.x) * 0.9, (e.clientY - p.y) * 0.9);
+  }
   p.x = e.clientX;
   p.y = e.clientY;
 });
@@ -629,8 +658,16 @@ function easeMouseLook(dt) {
   }
 }
 
+const IDLE = { throttle: 0, brake: 0.4, steer: 0, handbrake: 1, any: false, manualOverride: false, analog: false };
 function updateCamera(dt, car) {
   easeMouseLook(dt);
+  if (foot.active && !photo.active) {
+    foot.applyCamera(camera);
+    player.mesh.visible = true;
+    player.cockpit.setVisible(false);
+    camState.init = false;
+    return;
+  }
   if (photo.active) {
     photo.update(dt);
     photo.apply(camera);
@@ -687,6 +724,8 @@ function updateCamera(dt, car) {
       let low = 0;
       for (const ds of [-30, -15, 0, 12]) if (planner.at(player.s + ds, 'tunnel', 25) || planner.at(player.s + ds, 'toll', 25)) low = 1;
       if (world.overpassIn(player.s - 28, player.s + 15 + Math.abs(player.v) * 1.4)) low = 1;
+      // down in a city under (or next to) the expressway viaduct
+      if (player.layer === 'city' && player.d > -32 && player.d < 34) low = 1;
       camState.low += (low - camState.low) * (1 - Math.exp(-dt * 2.5));
       const k = camState.low;
       dist = (20 - 9 * k) * big;
@@ -805,6 +844,12 @@ function tunnelDepth(s) {
 }
 
 let lastDistrict = '';
+// what the world streams around: the car, or the person on foot
+function updateFocus() {
+  const w = foot && foot.active ? foot : null;
+  world.focus = w ? { s: w.s, d: w.d, y: w.y } : { s: player.s, d: player.d, y: player.veh.pos.y };
+  world.focusInfo = { walker: w ? { s: w.s, d: w.d, y: w.y } : null };
+}
 const TUNNEL_FOG = new THREE.Color(0.06, 0.05, 0.04);
 function step(dt) {
   st.time += dt;
@@ -821,7 +866,8 @@ function step(dt) {
   }
   if (!frozen) {
     const inp = st.mode === 'title' ? { throttle: 0, brake: 0, steer: 0, any: false } : input;
-    player.update(dt, inp, traffic);
+    player.update(dt, foot.active ? IDLE : inp, traffic);
+    if (foot.active) foot.update(dt, keys);
     traffic.update(dt, player);
     for (const net of world.nets.values()) net.update(dt, player);
     if (st.mode === 'drive') commute.update(dt);
@@ -845,9 +891,10 @@ function step(dt) {
     }
     player.events.length = 0;
     updateArms(dt);
-    const dn = planner.district(player.s).name;
+    const cz = planner.at(player.s, 'city', 0);
+    const dn = cz ? cz.name : planner.district(player.s).name;
     if (dn !== lastDistrict) {
-      if (lastDistrict && st.mode === 'drive') hud.say(dn);
+      if (lastDistrict && st.mode === 'drive') hud.say(cz ? cz.name + ' · EXIT RIGHT · F TO WALK' : dn, cz ? 3.5 : 2.2);
       lastDistrict = dn;
     }
   }
@@ -858,11 +905,14 @@ function step(dt) {
 
 function render(dt) {
   const o = world.origin;
-  world.update(player.s);
+  updateFocus();
+  world.update(world.focus.s);
   look = sky.apply(st.hour, scene, st.time);
   const night = look.night;
   world.setNight(night, st.time);
-  scene.fog.density = 0.0026 * W.fog;
+  // high up (mountain road, cable car, summit) the view reaches further
+  const viewH = world.focus ? Math.max(0, camera.position.y + world.origin.y - (planner.at(world.focus.s, 'city', 0) || { base: 1e9 }).base) : 0;
+  scene.fog.density = 0.0026 * W.fog * (1 - 0.65 * Math.min(1, viewH / 120));
   // inside a tunnel the sky light is shut out and the eye adapts a little
   const tk = tunnelDepth(player.s);
   st.tunnel = tk;
@@ -968,6 +1018,7 @@ function render(dt) {
 
   pipe.render(scene, camera);
   hud.draw({
+    onFoot: foot.active, prompt: foot.active ? foot.prompt : '',
     mode: st.mode, hour: st.hour, period: look.name, weather: W.name, odo: player.odo, closeCalls: player.closeCalls,
     speed: player.v, vmax: VMAX, auto: player.auto, music: audio.ctx && audio.music, stationName: radio.label(),
     commute: st.mode === 'drive' ? commute.hudState() : null,
@@ -982,6 +1033,7 @@ function render(dt) {
 }
 
 // prime the world
+updateFocus();
 world.update(player.s, true);
 traffic.init(player.s);
 // compile every shader up front (rain, snow, night lights...) so the first
@@ -1006,12 +1058,13 @@ if (!HOLD) requestAnimationFrame(loop);
 
 // ------------------------------------------------------------------ dev hooks
 window.__game = {
-  st, player, traffic, world, planner, commute, openJobs, camera, garage, openGarage, radio, openRadio, audio, pipe, sky, renderer, photo, enterPhoto, exitPhoto, pauseMenu,
+  st, player, traffic, world, planner, commute, openJobs, get foot() { return foot; }, camera, garage, openGarage, radio, openRadio, audio, pipe, sky, renderer, photo, enterPhoto, exitPhoto, pauseMenu,
   advance(sec, fps = 30) {
     const dt = 1 / fps;
     for (let t = 0; t < sec; t += dt) {
       step(dt);
-      world.update(player.s, true);
+      updateFocus();
+      world.update(world.focus.s, true);
       render(dt);
     }
   },

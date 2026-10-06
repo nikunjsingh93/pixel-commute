@@ -27,6 +27,8 @@ npm run deploy     # build + publish to the gh-pages branch (GitHub Pages)
 | `A` `D` / `←` `→` | steer |
 | `Space` / `Shift` | handbrake |
 | `O` | autopilot: keeps a lane, follows traffic, overtakes slow cars |
+| `F` | get out of the car / get into any car nearby; on foot: take the metro or the cable car |
+| `X` | gearbox: automatic (default) or manual (`E` / `Q` shift up / down) |
 | `C` | camera: top (high, art-of-rally style), far (default), cockpit, bumper |
 | mouse | look around: orbits the car in chase / far, turns your head in the cockpit; swings back after a moment |
 | `T` | next time of day: dawn, day, afternoon, sunset, blue hour, evening, night |
@@ -94,6 +96,26 @@ A planner (`src/planner.js`) places features one after another, deterministicall
 * **Toll plazas.** A canopy, booths and barrier arms that lift as cars roll through at walking
   pace.
 
+## The city
+
+Every so often the expressway runs through a whole city (the first one, NEO TOKYO, is about
+1.5 km in). The road rises onto a viaduct above Tokyo-style streets:
+
+* **Streets**: six avenues and eight cross streets, up to three lanes each way, with signals,
+  zebra crossings and a Shibuya-style scramble where crowds cross on the walk phase under giant
+  screens. Seventy-odd cars drive the grid, stopping at the lights.
+* **Getting there**: a Shuto-style off-ramp leaves the viaduct on the right and drops to a
+  signal on a street below; an on-ramp climbs back up later.
+* **On foot** (`F`): get out anywhere and walk around in first person (mouse or swipe to look;
+  Shift or Run to run). Walk up to any car to take it, mini-GTA style. Your own car stays parked
+  where you left it, and you can go back for it.
+* **Metro**: an elevated loop with four stations (Akihabara, Ueno, Shibuya, Skytree). Walk to a
+  station entrance, wait on the platform, board, and get off at any stop.
+* **Landmarks**: the Skytree, a temple with gates, a pagoda and a market street, a park with a
+  pond and cherry trees, and shops tucked under the railway arches.
+* **The mountain**: a hairpin road climbs 170 m from the edge of the city to a viewpoint at the
+  summit, and a cable car does the same trip in about a minute.
+
 ## Commute mode
 
 Pick **Commute** on the title screen, or **Mode** in the menu. **Drive (zen)** stays exactly as
@@ -153,6 +175,12 @@ src/
   features.js  tunnel, harbour bridge, roadworks and toll plaza geometry
   exits.js     an exit's road network: ramps, city loop, junctions, petrol station, local traffic
   goals.js     commute mode: jobs, fuel, tolls, milestones, the jobs panel
+  citylayout.js  plan of a city zone: streets, ramps, metro, landmarks, mountain + hairpin road
+  city.js      a city zone at runtime: tile streaming, layered ground (viaduct / ramps / streets)
+  city2.js     city structures: ramps, metro + stations, Skytree, temple, park, crossing, mountain
+  city3.js     city life: traffic on a signalled grid, pedestrians, trains, cable car
+  citybuild.js city textures, materials and geometry helpers, the expressway viaduct
+  foot.js      on foot: walking, getting into cars, riding the metro and the cable car
   tokyo.js     Tokyo-style street detail: shop-houses, signs, poles + wires, pavement furniture
   garage.js    the four player cars, paints, plate and the garage panel
   radio.js     stations, jingles, your own music files

@@ -104,9 +104,22 @@ export class Hud {
       if (st.closeCalls > 0) this.text(`CLOSE CALLS ${st.closeCalls}`, w - pad, pad + 7, C.dim, 1, 'right');
     }
 
-    if (st.commute) this.drawCommute(st.commute, touch, dt);
+    if (st.commute && !st.onFoot) this.drawCommute(st.commute, touch, dt);
+    if (st.prompt) {
+      const pw = font.measure(st.prompt) + 10;
+      const py = Math.floor(h * (touch ? 0.62 : 0.78));
+      this.panel(Math.floor(w / 2 - pw / 2), py - 3, pw, 11);
+      this.text(st.prompt, w / 2, py, C.warm, 1, 'center');
+    }
+    if (st.onFoot) {
+      // a small crosshair
+      g.fillStyle = 'rgba(244,241,232,0.7)';
+      g.fillRect(Math.floor(w / 2), Math.floor(h / 2) - 1, 1, 3);
+      g.fillRect(Math.floor(w / 2) - 1, Math.floor(h / 2), 3, 1);
+    }
 
-    // speedometer: bottom-left (keyboard) or top-left (touch)
+    // speedometer: bottom-left (keyboard) or top-left (touch); not on foot
+    if (st.onFoot) return this.drawRest(st, dt, touch);
     const kmh = Math.round(st.speed * 3.6);
     const sx = pad, sy = touch ? pad + 18 : h - pad - 17;
     this.text(String(kmh).padStart(3, ' '), sx, sy, C.ink, 2);
@@ -121,6 +134,13 @@ export class Hud {
     if (st.gear) this.text(st.gear, sx + 42, sy + 5, C.warm);
     if (st.auto) this.text('AUTO', sx + 25, sy - 1 + 0, C.green);
 
+    this.drawRest(st, dt, touch);
+  }
+
+  drawRest(st, dt, touch) {
+    const g = this.g;
+    const { w, h } = this;
+    const pad = 4;
     // bottom-right: radio
     if (st.music && !touch) {
       const name = st.stationName || '';
@@ -215,7 +235,7 @@ export class Hud {
     }
     return [
       ['W / ↑', 'ACCELERATE'], ['S / ↓', 'BRAKE / HOLD TO REVERSE'], ['A D / < >', 'STEER'], ['SPACE', 'HANDBRAKE'],
-      ['O', 'AUTOPILOT ON / OFF'], ['X', 'GEARBOX AUTO / MANUAL'], ['E  /  Q', 'SHIFT UP / DOWN (MANUAL)'], ['C', 'CAMERA: TOP FAR COCKPIT BUMPER'], ['MOUSE', 'LOOK AROUND THE CAR'],
+      ['O', 'AUTOPILOT ON / OFF'], ['X', 'GEARBOX AUTO / MANUAL'], ['F', 'GET OUT / IN A CAR · ACTION'], ['E  /  Q', 'SHIFT UP / DOWN (MANUAL)'], ['C', 'CAMERA: TOP FAR COCKPIT BUMPER'], ['MOUSE', 'LOOK AROUND THE CAR'],
       ['T', 'TIME OF DAY'], ['R', 'WEATHER'], ['M  /  N', 'RADIO / NEXT STATION'], ['[  ]', 'PIXEL RESOLUTION'],
       ['P', 'PHOTO MODE'], ['G', 'PALETTE: RAW 8-BIT POSTER'], ['J', 'JOBS (COMMUTE MODE)'], ['U', 'HIDE HUD'], ['ESC', 'PAUSE + MENU'],
       ['PAD', 'STICK STEER  RT GAS  LT BRAKE'],

@@ -208,12 +208,13 @@ export class PhotoMode {
     const c = this.g.carPos();
     const dx = this.pos.x - c.x, dz = this.pos.z - c.z;
     const d = Math.hypot(dx, dz);
-    if (d > MAX_DIST) {
-      this.pos.x = c.x + (dx / d) * MAX_DIST;
-      this.pos.z = c.z + (dz / d) * MAX_DIST;
+    const MAXD = this.maxDist || MAX_DIST;
+    if (d > MAXD) {
+      this.pos.x = c.x + (dx / d) * MAXD;
+      this.pos.z = c.z + (dz / d) * MAXD;
     }
     const gy = this.g.groundY(this.pos.x, this.pos.z) + 0.25;
-    this.pos.y = Math.max(gy, Math.min(c.y + 60, this.pos.y));
+    this.pos.y = Math.max(gy, Math.min(c.y + (this.maxDist ? 2000 : 60), this.pos.y));
   }
 
   apply(camera) {

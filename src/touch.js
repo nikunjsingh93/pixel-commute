@@ -23,14 +23,56 @@ export function setupTouch(game) {
   const K = 'clamp(70px, 19vmin, 112px)'; // brake
   const bl = edge('left'), br = edge('right'), bb = edge('bottom');
 
+  // driving controls (hidden on foot)
+  const drive = [];
   // steering (bottom-left)
-  button(root, '', chev(-1), { width: S, height: S, left: bl, bottom: bb }, ...hold('KeyA'));
-  button(root, '', chev(1), { width: S, height: S, left: `calc(${bl} + ${S} + 16px)`, bottom: bb }, ...hold('KeyD'));
+  drive.push(button(root, '', chev(-1), { width: S, height: S, left: bl, bottom: bb }, ...hold('KeyA')));
+  drive.push(button(root, '', chev(1), { width: S, height: S, left: `calc(${bl} + ${S} + 16px)`, bottom: bb }, ...hold('KeyD')));
   // pedals (bottom-right)
-  button(root, '', '<span>Gas</span>', { width: G, height: G, right: br, bottom: bb }, ...hold('KeyW'));
-  button(root, '', '<span>Brake</span>', { width: K, height: K, right: `calc(${br} + ${G} + 14px)`, bottom: bb }, ...hold('KeyS'));
+  drive.push(button(root, '', '<span>Gas</span>', { width: G, height: G, right: br, bottom: bb }, ...hold('KeyW')));
+  drive.push(button(root, '', '<span>Brake</span>', { width: K, height: K, right: `calc(${br} + ${G} + 14px)`, bottom: bb }, ...hold('KeyS')));
   const HB = 'clamp(56px, 14vmin, 84px)';
-  button(root, 'small', '<span>Hand</span><span>brake</span>', { width: HB, height: HB, right: br, bottom: `calc(${bb} + ${G} + 14px)` }, ...hold('ShiftLeft'));
+  drive.push(button(root, 'small', '<span>Hand</span><span>brake</span>', { width: HB, height: HB, right: br, bottom: `calc(${bb} + ${G} + 14px)` }, ...hold('ShiftLeft')));
+  // get out of the car (top, beside the menu)
+  const TB = 'clamp(44px, 11vmin, 56px)';
+  const door = button(root, 'pill small', '<span>Exit</span><span>car</span>', { width: `calc(${TB} + 18px)`, height: TB, top: 'max(12px, env(safe-area-inset-top))', right: `calc(${br} + ${TB} + 14px)` }, () => game.press('KeyF'));
+
+  // on foot: a move stick (bottom-left), act + run (bottom-right)
+  const foot = [];
+  const J = 'clamp(110px, 30vmin, 170px)';
+  const joy = document.createElement('div');
+  joy.className = 'joy';
+  Object.assign(joy.style, { position: 'absolute', left: bl, bottom: bb, width: J, height: J, borderRadius: '50%', pointerEvents: 'auto', touchAction: 'none',
+    background: 'rgba(12,15,26,.35)', border: '2px solid rgba(244,241,232,.3)' });
+  const knob = document.createElement('div');
+  Object.assign(knob.style, { position: 'absolute', left: '50%', top: '50%', width: '40%', height: '40%', margin: '-20% 0 0 -20%', borderRadius: '50%', background: 'rgba(244,241,232,.35)', pointerEvents: 'none' });
+  joy.appendChild(knob);
+  root.appendChild(joy);
+  foot.push(joy);
+  let jid = null;
+  const jmove = (e) => {
+    const r = joy.getBoundingClientRect();
+    let x = (e.clientX - (r.left + r.width / 2)) / (r.width / 2), y = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
+    const l = Math.hypot(x, y);
+    if (l > 1) { x /= l; y /= l; }
+    knob.style.transform = `translate(${x * 60}%, ${y * 60}%)`;
+    if (game.stick) game.stick(x, -y);
+  };
+  joy.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); jid = e.pointerId; try { joy.setPointerCapture(jid); } catch (err) { /* */ } jmove(e); });
+  joy.addEventListener('pointermove', (e) => { if (e.pointerId === jid) jmove(e); });
+  const jend = (e) => { if (e.pointerId !== jid) return; jid = null; knob.style.transform = ''; if (game.stick) game.stick(0, 0); };
+  joy.addEventListener('pointerup', jend);
+  joy.addEventListener('pointercancel', jend);
+  foot.push(button(root, '', '<span>Act</span>', { width: G, height: G, right: br, bottom: bb }, () => game.press('KeyF')));
+  const runB = button(root, 'small', '<span>Run</span>', { width: HB, height: HB, right: `calc(${br} + ${G} + 14px)`, bottom: bb }, () => game.press('KeyRun'));
+  foot.push(runB);
+  setInterval(() => {
+    const onFoot = game.onFoot ? game.onFoot() : false;
+    for (const b of drive) b.style.display = onFoot ? 'none' : '';
+    for (const b of foot) b.style.display = onFoot ? '' : 'none';
+    door.style.display = onFoot ? 'none' : '';
+    runB.classList.toggle('act', !!(game.running && game.running()));
+  }, 150);
 
   // manual gearbox: shift up / down above the steering buttons
   const GB = 'clamp(48px, 12vmin, 66px)';

@@ -52,8 +52,7 @@ export class Builder {
   // wheel along X, centred on (x, y, z): a 20-sided tyre with a sidewall,
   // a silver rim with five spokes (so you can see it turn) and a dark hub.
   // Both sides are capped, so one geometry works on either side of a car.
-  wheel(x, y, z, r, w) {
-    const N = 20;
+  wheel(x, y, z, r, w, N = 20) {
     const tyre = new THREE.Color('#141518'), wall = new THREE.Color('#25262b');
     const lip = new THREE.Color('#8d939c'), spoke = new THREE.Color('#c3c7cf'), gap = new THREE.Color('#2e3138');
     const hub = new THREE.Color('#6f747d');
@@ -92,7 +91,8 @@ export class Builder {
 // begin(), add(carMesh, dims, spin) per visible car, end().
 export class WheelPool {
   constructor(parent, max = 640) {
-    this.mesh = new THREE.InstancedMesh(unitWheel(), bodyMat, max);
+    unitWheel();
+    this.mesh = new THREE.InstancedMesh(unitWheelLow, bodyMat, max);
     this.mesh.frustumCulled = false;
     this.mesh.count = 0;
     this.max = max;
@@ -104,18 +104,21 @@ export class WheelPool {
     this._q = new THREE.Quaternion();
     this._s = new THREE.Vector3();
     this._x = new THREE.Vector3(1, 0, 0);
+    this._b = new THREE.Matrix4();
   }
   begin() {
     this.n = 0;
   }
-  add(carMesh, dims, spin) {
+  // parent: the car's parent group when it is not the pool's own parent
+  add(carMesh, dims, spin, parent) {
     carMesh.updateMatrix();
+    const base = parent ? this._b.multiplyMatrices(parent.matrix, carMesh.matrix) : carMesh.matrix;
     this._q.setFromAxisAngle(this._x, spin);
     this._s.set(WHEEL_W, dims.wr, dims.wr);
     for (const [x, z] of dims.spots) {
       if (this.n >= this.max) return;
       this._l.compose(this._p.set(x, dims.wr, z), this._q, this._s);
-      this._m.multiplyMatrices(carMesh.matrix, this._l);
+      this._m.multiplyMatrices(base, this._l);
       this.mesh.setMatrixAt(this.n++, this._m);
     }
   }
@@ -127,11 +130,16 @@ export class WheelPool {
 
 // one shared unit wheel (radius 1, width 1) for every car, scaled per car
 let unitWheelGeo = null;
+let unitWheelLow = null;
 export function unitWheel() {
   if (!unitWheelGeo) {
     const b = new Builder();
     b.wheel(0, 0, 0, 1, 1);
     unitWheelGeo = b.geometry();
+    // a lighter one for the many traffic / city cars
+    const lb = new Builder();
+    lb.wheel(0, 0, 0, 1, 1, 12);
+    unitWheelLow = lb.geometry();
   }
   return unitWheelGeo;
 }
@@ -333,7 +341,7 @@ function build(type, color, opts = {}) {
   const wx = wheelX(hw);
   const spots = [[wx, axle], [-wx, axle], [wx, rearAxle], [-wx, rearAxle]];
   if (type === 'truck') spots.push([wx, rearAxle + 1.25], [-wx, rearAxle + 1.25]);
-  if (opts.bakeWheels) for (const [x, z] of spots) B.wheel(x, wr, z, wr, WHEEL_W);
+  if (opts.bakeWheels) for (const [x, z] of spots) B.wheel(x, wr, z, wr, WHEEL_W, 10);
   if (type !== 'truck' && type !== 'bus' && !opts.separateWheels) B.box(-0.24, 0.24, front.y - 0.065, front.y + 0.065, front.z - 0.02, front.z + 0.01, '#cfc8ac');
   // dark underbody so the gap reads from behind
   B.box(-hw + 0.15, hw - 0.15, 0.12, 0.32, -L / 2 + 0.3, L / 2 - 0.3, '#0e0f12', { noBottom: true });
