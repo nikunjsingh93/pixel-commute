@@ -220,7 +220,7 @@ export class Foot {
   }
 
   update(dt, keys) {
-    if (this.ride) return this.updateRide(dt);
+    if (this.ride) return this.updateRide(dt, keys);
     this.prevD = this.locate().d;
     const W = this.g.world;
     // input: keys or the touch stick
@@ -398,14 +398,14 @@ export class Foot {
     const r = this.ride;
     if (r.kind === 'train') {
       if (r.phase === 'platform') {
-        if (r.ready) { r.phase = 'onboard'; r.train = r.ready; r.boardedAt = r.st; this.g.hud.say('ALL ABOARD', 1.2); }
+        if (r.ready) { r.phase = 'onboard'; r.train = r.ready; r.boardedAt = r.st; this.local = { a: 4, b: 0 }; this.g.hud.say('ALL ABOARD', 1.2); }
         else { this.endRide(r.st); }
       } else if (r.phase === 'onboard') {
         if (r.train.state === 'dwell' && r.train.at && r.train.at !== r.boardedAt) this.endRide(r.train.at);
         else { r.getOff = !r.getOff; this.g.hud.say(r.getOff ? 'GETTING OFF AT THE NEXT STOP' : 'STAYING ON', 1.4); }
       }
     } else if (r.kind === 'cable') {
-      if (r.phase === 'wait' && r.ready) { r.phase = 'onboard'; r.cabin = r.ready; this.g.hud.say('ENJOY THE VIEW', 1.4); }
+      if (r.phase === 'wait' && r.ready) { r.phase = 'onboard'; r.cabin = r.ready; this.local = { a: 0, b: 0 }; this.g.hud.say('ENJOY THE VIEW', 1.4); }
       else if (r.phase === 'wait') this.endCable(r.end);
     }
   }
@@ -430,7 +430,31 @@ export class Foot {
     this.locate();
   }
 
-  updateRide(dt) {
+  // walking inside a moving coach / cabin: the input moves a local offset
+  // (a along, b across) that stays inside the floor area
+  insideMove(dt, keys, camYaw, A, B, aMax, bMax) {
+    const L = this.local || (this.local = { a: 0, b: 0 });
+    let mx = 0, mz = 0;
+    if (keys) {
+      if (keys.has('KeyW') || keys.has('ArrowUp')) mz += 1;
+      if (keys.has('KeyS') || keys.has('ArrowDown')) mz -= 1;
+      if (keys.has('KeyD') || keys.has('ArrowRight')) mx += 1;
+      if (keys.has('KeyA') || keys.has('ArrowLeft')) mx -= 1;
+    }
+    mx += this.stick.x;
+    mz += this.stick.y;
+    const ml = Math.hypot(mx, mz);
+    if (ml > 1) { mx /= ml; mz /= ml; }
+    const sp = 1.7 * Math.min(1, ml);
+    const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw), rx = Math.cos(camYaw), rz = -Math.sin(camYaw);
+    const vx = (fx * mz + rx * mx) * sp, vz = (fz * mz + rz * mx) * sp;
+    L.a = Math.max(-aMax, Math.min(aMax, L.a + (vx * A.x + vz * A.z) * dt));
+    L.b = Math.max(-bMax, Math.min(bMax, L.b + (vx * B.x + vz * B.z) * dt));
+    this.bob += sp * dt * 1.9;
+    return L;
+  }
+
+  updateRide(dt, keys) {
     const r = this.ride, net = r.net;
     r.t += dt;
     if (r.kind === 'train') {
@@ -445,12 +469,15 @@ export class Foot {
         this.prompt = r.ready ? 'F  BOARD THE TRAIN' : 'WAITING FOR A TRAIN...  (F LEAVE)';
       } else {
         const tr = r.train;
-        // seated inside the leading car, by the window
-        const p = net.trainPos(tr, tr.t - tr.dir * 6, {});
-        const w = net.wp(p.u, p.v, net.lay.metro.h + 0.75);
-        this.pos.set(net.A.x + w[0], 0, net.A.z + w[2]);
+        // inside the leading car: walk up and down the aisle between the benches
+        const p = net.trainPos(tr, tr.t - tr.dir * 9.2, {});
+        const Tx = net.F.x * p.tu + net.Rv.x * p.tv, Tz = net.F.z * p.tu + net.Rv.z * p.tv;
+        const T = { x: Tx, z: Tz }, N = { x: Tz, z: -Tx };
+        this.trainDir = Math.atan2(Tx, Tz);
+        const L = this.insideMove(dt, keys, this.trainDir + Math.PI + this.yaw, T, N, 8.4, 0.72);
+        const w = net.wp(p.u, p.v, net.lay.metro.h + 0.2 + 0.43);
+        this.pos.set(net.A.x + w[0] + T.x * L.a + N.x * L.b, 0, net.A.z + w[2] + T.z * L.a + N.z * L.b);
         this.y = net.A.y + w[1];
-        this.trainDir = Math.atan2(net.F.x * p.tu + net.Rv.x * p.tv, net.F.z * p.tu + net.Rv.z * p.tv);
         if (tr.state === 'dwell' && tr.at && tr.at !== r.boardedAt && r.getOff) return this.endRide(tr.at);
         if (tr.state === 'run') r.boardedAt = null;
         this.prompt = tr.state === 'dwell' && tr.at && tr.at !== r.boardedAt ? tr.at.name + '  · F GET OFF' : 'NEXT: ' + (tr.next ? tr.next.name : '') + (r.getOff ? '  · GETTING OFF' : '  · F GET OFF NEXT STOP');
@@ -469,8 +496,12 @@ export class Foot {
       } else {
         const cb = r.cabin;
         const q = net.cablePos(cb.x);
-        const w = net.wp(C.u + cb.off, q.v, q.h - 3.25);
-        this.pos.set(net.A.x + w[0], 0, net.A.z + w[2]);
+        // the cabin's own axes (its mesh is turned a quarter from the zone)
+        const rot = cb.mesh.rotation.y;
+        const Z = { x: Math.sin(rot), z: Math.cos(rot) }, X = { x: Math.cos(rot), z: -Math.sin(rot) };
+        const L = this.insideMove(dt, keys, this.yaw, Z, X, 1.75, 1.2);
+        const w = net.wp(C.u + cb.off, q.v, q.h - 3.28);
+        this.pos.set(net.A.x + w[0] + Z.x * L.a + X.x * L.b, 0, net.A.z + w[2] + Z.z * L.a + X.z * L.b);
         this.y = net.A.y + w[1];
         this.prompt = 'CABLE CAR  ' + Math.round(q.h) + ' M';
         // arrived at the other end
@@ -483,7 +514,7 @@ export class Foot {
 
   // ---------------------------------------------------------------- camera
   applyCamera(camera) {
-    const bob = this.ride ? 0 : Math.sin(this.bob * 2) * 0.035;
+    const bob = this.ride && this.ride.phase !== 'onboard' ? 0 : Math.sin(this.bob * 2) * 0.035;
     camera.position.set(this.pos.x - this.g.world.origin.x, this.y + EYE + bob - this.g.world.origin.y, this.pos.z - this.g.world.origin.z);
     camera.up.set(0, 1, 0);
     let yaw = this.yaw;

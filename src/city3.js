@@ -422,6 +422,32 @@ P.spawnTransit = function spawnTransit() {
   // a car body with real window openings (you can ride inside and look out):
   // sides are wall strips below / above the windows and posts between them
   const bodyGeo = trainCarGeometry();
+  const inner = new Builder(), lamps = new Builder();
+  const SEAT = '#3a6a9a', METAL = '#c3c7cf', STRAP = '#e8e4da';
+  inner.box(-1.4, 1.4, 0.4, 0.43, -9.1, 9.1, '#6a6d72'); // floor
+  for (const sx of [1, -1]) {
+    for (const [z0, z1] of [[-8.3, -1.5], [1.5, 8.3]]) {
+      inner.box(Math.min(sx * 0.95, sx * 1.42), Math.max(sx * 0.95, sx * 1.42), 0.43, 0.84, z0, z1, SEAT); // bench
+      inner.box(Math.min(sx * 1.3, sx * 1.42), Math.max(sx * 1.3, sx * 1.42), 0.84, 1.55, z0, z1, SEAT); // backrest
+      for (const z of [z0 + 0.05, z1 - 0.05]) inner.box(Math.min(sx * 0.9, sx * 1.0), Math.max(sx * 0.9, sx * 1.0), 0.43, 1.25, z - 0.03, z + 0.03, METAL); // armrest posts
+    }
+    // grab rail overhead along the car, with hanging straps
+    inner.box(sx * 0.75 - 0.025, sx * 0.75 + 0.025, 3.2, 3.25, -8.8, 8.8, METAL);
+    for (let z = -8.2; z <= 8.2; z += 0.75) {
+      if (Math.abs(z) < 1.3) continue;
+      inner.box(sx * 0.75 - 0.012, sx * 0.75 + 0.012, 2.75, 3.2, z - 0.012, z + 0.012, STRAP);
+      inner.box(sx * 0.75 - 0.06, sx * 0.75 + 0.06, 2.64, 2.75, z - 0.012, z + 0.012, STRAP);
+    }
+    // vertical poles by the doors and in the middle of each bench run
+    for (const z of [-1.35, 1.35, -4.9, 4.9]) inner.box(sx * 0.88 - 0.03, sx * 0.88 + 0.03, 0.43, 3.78, z - 0.03, z + 0.03, METAL);
+  }
+  // luggage racks above the benches
+  for (const sx of [1, -1]) inner.box(Math.min(sx * 1.05, sx * 1.42), Math.max(sx * 1.05, sx * 1.42), 2.45, 2.5, -8.3, 8.3, METAL);
+  // ceiling light strips
+  for (const [z0, z1] of [[-8.6, -1.6], [1.6, 8.6]]) lamps.box(-0.22, 0.22, 3.72, 3.78, z0, z1, '#fff4d8');
+  const innerGeo = inner.geometry(), lampGeo = lamps.geometry();
+  const innerMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const lampMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1.5, 1.5, 1.4) });
   this.trains = [];
   // three trains each way, spaced around the loop
   for (const [dir, off, start] of [[1, 1.85, 0.1], [1, 1.85, 0.43], [1, 1.85, 0.76], [-1, -1.85, 0.6], [-1, -1.85, 0.93], [-1, -1.85, 0.27]]) {
@@ -429,6 +455,9 @@ P.spawnTransit = function spawnTransit() {
     for (let i = 0; i < 4; i++) {
       const m = new THREE.Mesh(bodyGeo, this.mats.trainIn);
       m.userData.shared = true;
+      const mi = new THREE.Mesh(innerGeo, innerMat), ml = new THREE.Mesh(lampGeo, lampMat);
+      mi.userData.shared = ml.userData.shared = true;
+      m.add(mi, ml);
       this.root.add(m);
       cars.push(m);
     }
@@ -438,11 +467,25 @@ P.spawnTransit = function spawnTransit() {
   // cable car cabins
   // cabin: a red floor tub and roof joined by corner posts, open windows all
   // round (riders see the view), hanger arm up to the cable
+  // a hollow cabin you can walk around in: floor, waist-high walls, big open
+  // windows between the posts, a ceiling, benches at both ends, a hand rail
   const cab = new Builder();
-  cab.box(-1.6, 1.6, -3.4, -2.6, -2.4, 2.4, '#c8402a', { side: '#b8301e' });
-  cab.box(-1.6, 1.6, -0.8, -0.4, -2.4, 2.4, '#c8402a', { side: '#b8301e' });
-  for (const [x, z] of [[-1.5, -2.3], [1.5, -2.3], [-1.5, 2.3], [1.5, 2.3], [-1.5, 0], [1.5, 0]]) cab.box(x - 0.1, x + 0.1, -2.6, -0.8, z - 0.1, z + 0.1, '#e8e4da');
-  cab.box(-0.1, 0.1, -0.4, 0.6, -0.1, 0.1, '#4c5260');
+  const RED = '#c8402a', RED2 = '#b8301e', CREAM = '#e8e4da';
+  cab.box(-1.6, 1.6, -3.5, -3.3, -2.4, 2.4, RED, { side: RED2 }); // floor slab
+  cab.box(-1.5, 1.5, -3.3, -3.28, -2.3, 2.3, '#5a5c62'); // floor covering
+  for (const sx of [1, -1]) cab.box(Math.min(sx * 1.52, sx * 1.6), Math.max(sx * 1.52, sx * 1.6), -3.3, -2.4, -2.4, 2.4, RED, { side: RED2 }); // side walls
+  for (const sz of [1, -1]) cab.box(-1.6, 1.6, -3.3, -2.4, Math.min(sz * 2.32, sz * 2.4), Math.max(sz * 2.32, sz * 2.4), RED, { side: RED2 }); // end walls
+  cab.box(-1.6, 1.6, -0.82, -0.72, -2.4, 2.4, CREAM); // ceiling
+  cab.box(-1.65, 1.65, -0.72, -0.4, -2.45, 2.45, RED, { side: RED2 }); // roof
+  for (const sx of [1, -1]) cab.box(Math.min(sx * 1.52, sx * 1.6), Math.max(sx * 1.52, sx * 1.6), -1.0, -0.82, -2.4, 2.4, CREAM); // window head
+  for (const sz of [1, -1]) cab.box(-1.6, 1.6, -1.0, -0.82, Math.min(sz * 2.32, sz * 2.4), Math.max(sz * 2.32, sz * 2.4), CREAM);
+  for (const [x, z] of [[-1.55, -2.35], [1.55, -2.35], [-1.55, 2.35], [1.55, 2.35], [-1.55, 0], [1.55, 0]]) cab.box(x - 0.06, x + 0.06, -2.4, -0.82, z - 0.06, z + 0.06, CREAM); // window posts
+  for (const sz of [1, -1]) {
+    cab.box(-1.4, 1.4, -3.28, -2.9, Math.min(sz * 1.95, sz * 2.3), Math.max(sz * 1.95, sz * 2.3), '#3a6a9a'); // bench
+    cab.box(-1.4, 1.4, -2.9, -2.45, Math.min(sz * 2.22, sz * 2.3), Math.max(sz * 2.22, sz * 2.3), '#3a6a9a'); // backrest
+  }
+  for (const sx of [1, -1]) cab.box(Math.min(sx * 1.38, sx * 1.44), Math.max(sx * 1.38, sx * 1.44), -2.35, -2.3, -1.9, 1.9, '#c3c7cf'); // hand rails
+  cab.box(-0.1, 0.1, -0.4, 0.6, -0.1, 0.1, '#4c5260'); // hanger
   const cabGeo = cab.geometry();
   const cabMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   this.cabins = [0, 1].map((i) => {
