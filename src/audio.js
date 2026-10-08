@@ -9,6 +9,14 @@ export class Audio {
     this.ctx = null;
     this.music = true;
     this.muted = false;
+    // volumes 0..1 (saved): car sounds and the radio
+    this.carVol = 0.8;
+    this.radioVol = 0.8;
+    try {
+      const v = JSON.parse(localStorage.getItem('pixel-commute.volume') || '{}');
+      if (typeof v.car === 'number') this.carVol = v.car;
+      if (typeof v.radio === 'number') this.radioVol = v.radio;
+    } catch (e) { /* defaults */ }
   }
 
   start() {
@@ -22,6 +30,10 @@ export class Audio {
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16;
     this.master.connect(comp).connect(ctx.destination);
+    // the car (engine, tyres, wind, bumps) and the radio each get a volume
+    this.carBus = ctx.createGain();
+    this.carBus.gain.value = this.carVol;
+    this.carBus.connect(this.master);
 
     // noise buffer shared by many voices
     const len = ctx.sampleRate * 2;
@@ -99,16 +111,16 @@ export class Audio {
     this.pulse.connect(this.pulseDepth).connect(this.comb.gain);
     nsrc.connect(nbp).connect(this.comb).connect(this.engLP);
     nsrc.start(0, Math.random());
-    this.engLP.connect(this.engBody).connect(this.engHP).connect(this.eng).connect(this.master);
+    this.engLP.connect(this.engBody).connect(this.engHP).connect(this.eng).connect(this.carBus);
     this.o1.start(); this.o2.start(); this.sub.start(); this.pulse.start();
 
     // tyre / wind roar
-    this.roar = this.loopNoise('lowpass', 500, 0);
+    this.roar = this.loopNoise('lowpass', 500, 0, this.carBus);
     // rain hiss
-    this.rainN = this.loopNoise('highpass', 1800, 0);
+    this.rainN = this.loopNoise('highpass', 1800, 0, this.carBus);
     // scrape
-    this.scrapeN = this.loopNoise('bandpass', 2600, 0);
-    this.squeal = this.loopNoise('bandpass', 1000, 0);
+    this.scrapeN = this.loopNoise('bandpass', 2600, 0, this.carBus);
+    this.squeal = this.loopNoise('bandpass', 1000, 0, this.carBus);
     this.squeal.f.Q.value = 9;
 
     // music bus with a gentle lowpass "radio" tone + vinyl crackle
@@ -143,6 +155,14 @@ export class Audio {
     src.connect(f).connect(g).connect(dest);
     src.start(0, Math.random() * 1.5);
     return { g, f };
+  }
+
+  setVolumes(car, radio) {
+    this.carVol = Math.max(0, Math.min(1, car));
+    this.radioVol = Math.max(0, Math.min(1, radio));
+    try { localStorage.setItem('pixel-commute.volume', JSON.stringify({ car: this.carVol, radio: this.radioVol })); } catch (e) { /* ignore */ }
+    if (this.ctx) this.carBus.gain.setTargetAtTime(this.carVol, this.ctx.currentTime, 0.05);
+    if (this.onVolume) this.onVolume();
   }
 
   setMuted(m) {
@@ -212,7 +232,7 @@ export class Audio {
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.5 * power + 0.15, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-    o.connect(g).connect(this.master);
+    o.connect(g).connect(this.carBus);
     o.start(t);
     o.stop(t + 0.4);
     const n = ctx.createBufferSource();
@@ -223,7 +243,7 @@ export class Audio {
     const ng = ctx.createGain();
     ng.gain.setValueAtTime(0.35 * power + 0.1, t);
     ng.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-    n.connect(nf).connect(ng).connect(this.master);
+    n.connect(nf).connect(ng).connect(this.carBus);
     n.start(t, Math.random());
     n.stop(t + 0.25);
   }

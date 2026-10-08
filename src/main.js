@@ -420,6 +420,7 @@ const pauseMenu = new Menu('pause-menu', [
   { label: () => 'Next station<small>tune</small>', run: () => runAction('KeyN') },
   { label: (m) => `Resolution<small>${m.res}</small>`, run: () => cycleResolution() },
   { label: () => `Graphics<small>${quality.name.toLowerCase()}</small>`, run: () => cycleQuality() },
+  { label: () => `Sound<small>car ${Math.round(audio.carVol * 10)} · radio ${Math.round(audio.radioVol * 10)}</small>`, run: () => openSound(), spin: false },
   { label: () => 'Fullscreen<small>toggle</small>', run: () => toggleFullscreen(), spin: false },
   { label: () => 'Photo<small>mode</small>', run: () => enterPhoto(), spin: false },
   { label: (m) => `Gearbox<small>${m.manual ? 'manual' : 'auto'}</small>`, run: () => runAction('KeyX'), act: (m) => m.manual },
@@ -509,6 +510,50 @@ function renderRadio() {
     x.style.minHeight = '28px';
   });
   btn(el.querySelector('#r-done'), 'primary', 'Done', () => radioPanel.open(false));
+}
+
+// ------------------------------------------------------------------ sound panel
+const soundPanel = new Panel('sound');
+Object.assign(soundPanel.root.style, { left: 'auto', right: 'max(18px, env(safe-area-inset-right))', transform: 'translateY(-50%)', width: 'min(420px, 92vw)' });
+panels.push(soundPanel);
+audio.onVolume = () => radio.applyGains();
+function openSound() {
+  startAudio();
+  soundPanel.open(true);
+  renderSound();
+}
+function renderSound() {
+  const el = soundPanel.el;
+  el.innerHTML = '<h2>Sound</h2><div id="snd-rows"></div><div class="row" id="snd-done" style="margin-top:12px"></div>';
+  const rows = el.querySelector('#snd-rows');
+  const row = (label, get, set) => {
+    const r = document.createElement('div');
+    r.className = 'row';
+    const name = document.createElement('span');
+    name.textContent = label;
+    name.style.minWidth = '110px';
+    r.appendChild(name);
+    const bar = document.createElement('span');
+    bar.className = 'bar';
+    bar.innerHTML = `<i style="width:${Math.round(get() * 100)}%"></i>`;
+    const step = (d) => {
+      set(Math.round(Math.max(0, Math.min(1, get() + d)) * 10) / 10);
+      renderSound();
+    };
+    const minus = button(r, 'small', '-', null, () => step(-0.1));
+    minus.style.position = 'relative';
+    r.appendChild(bar);
+    const plus = button(r, 'small', '+', null, () => step(0.1));
+    plus.style.position = 'relative';
+    const val = document.createElement('span');
+    val.textContent = String(Math.round(get() * 10));
+    r.appendChild(val);
+    rows.appendChild(r);
+  };
+  row('Car sounds', () => audio.carVol, (v) => audio.setVolumes(v, audio.radioVol));
+  row('Radio', () => audio.radioVol, (v) => audio.setVolumes(audio.carVol, v));
+  const d = button(el.querySelector('#snd-done'), 'primary', 'Done', null, () => soundPanel.open(false));
+  d.style.position = 'relative';
 }
 
 // ------------------------------------------------------------------ garage
@@ -640,8 +685,9 @@ window.addEventListener('mousemove', (e) => {
   if (foot.active) foot.look(e.movementX, e.movementY);
   else lookBy(e.movementX, e.movementY);
 });
-// on foot with a mouse: the mouse is captured so you can turn all the way
-// round (pointer lock; Esc releases it, a click takes it back)
+// with a mouse the pointer is captured on a click (on foot and while
+// driving), so looking / panning the camera never stops at the screen edge
+// (pointer lock; Esc releases it, a click takes it back)
 function captureMouse() {
   if (st.touch || document.pointerLockElement === glCanvas || !glCanvas.requestPointerLock) return;
   try { const p = glCanvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (err) { /* needs a user gesture */ }
@@ -650,7 +696,7 @@ function releaseMouse() {
   if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
 }
 window.addEventListener('pointerdown', (e) => {
-  if (e.pointerType !== 'mouse' || !foot || !foot.active || !lookAllowed() || st.touch) return;
+  if (e.pointerType !== 'mouse' || !foot || !lookAllowed() || st.touch) return;
   if (e.target.closest && e.target.closest('.pb, .ui-panel, .ui-menu')) return;
   if (document.pointerLockElement !== glCanvas && glCanvas.requestPointerLock) {
     try { const p = glCanvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (err) { /* needs a gesture */ }

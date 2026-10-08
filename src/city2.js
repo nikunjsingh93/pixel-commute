@@ -548,7 +548,11 @@ P.buildMountain = function buildMountain(G, glows, lights) {
   for (const [ua, ub, v] of lay.hillLegs) {
     const lo = Math.min(ua, ub), hi = Math.max(ua, ub);
     const rv = v - lay.HILL_HW - 0.6;
+    // no rail where the road itself passes (the climb up onto the first leg,
+    // the hairpins)
+    const onRoad = (u) => lay.onHill(u, rv, 1.2);
     for (let u = lo; u < hi; u += 4) {
+      if (onRoad(u) || onRoad(Math.min(hi, u + 4))) continue;
       const hA = this.mountainH(u, v), hB = this.mountainH(Math.min(hi, u + 4), v);
       const r0 = this.wp(u, rv, hA + 0.5), r1 = this.wp(Math.min(hi, u + 4), rv, hB + 0.5);
       const r2 = this.wp(Math.min(hi, u + 4), rv, hB + 0.82), r3 = this.wp(u, rv, hA + 0.82);
@@ -559,6 +563,7 @@ P.buildMountain = function buildMountain(G, glows, lights) {
     // solid in 12 m pieces (each at its own height), clear of the hairpin ends
     for (let u = lo + 14; u < hi - 14; u += 12) {
       const ue = Math.min(hi - 14, u + 12);
+      if (onRoad(u) || onRoad(ue) || onRoad((u + ue) / 2)) continue;
       const hs = [u, ue].map((uu) => this.mountainH(uu, v));
       this.obstacles.push({ s: this.S + (u + ue) / 2, d: rv, L: ue - u, W: 0.3, y0: this.base + Math.min(...hs) - 0.6, y1: this.base + Math.max(...hs) + 1.0, layer: 'city', kind: 'rail' });
     }

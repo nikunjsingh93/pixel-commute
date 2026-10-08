@@ -131,8 +131,9 @@ export class Radio {
     const t = this.a.ctx.currentTime;
     const files = this.station.style === 'files';
     const on = this.a.music;
-    this.a.musicBus.gain.setTargetAtTime(on && !files ? 0.55 : 0, t, 0.25);
-    this.fileGain.gain.setTargetAtTime(on && files ? 0.75 : 0, t, 0.25);
+    const vol = this.a.radioVol ?? 0.8;
+    this.a.musicBus.gain.setTargetAtTime(on && !files ? 0.7 * vol : 0, t, 0.25);
+    this.fileGain.gain.setTargetAtTime(on && files ? 0.95 * vol : 0, t, 0.25);
     if (files && on && this.el && this.el.paused && this.el.src) this.el.play().catch(() => {});
     if ((!on || !files) && this.el && !this.el.paused) this.el.pause();
   }

@@ -246,14 +246,6 @@ export class PhotoMode {
     const d = new Date();
     const pad = (n) => String(n).padStart(2, '0');
     const name = `pixel-commute-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.png`;
-    const file = new File([blob], name, { type: 'image/png' });
-    // phones: the share sheet (save to photos / send); otherwise a download
-    if (this.g.touch() && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: 'Pixel Commute' });
-        return;
-      } catch (e) { /* cancelled: fall back to a download */ }
-    }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = name;
