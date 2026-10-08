@@ -137,7 +137,7 @@ export class PhotoMode {
     this.updateHint();
   }
 
-  enter(camera) {
+  enter(camera, free = false) {
     this.active = true;
     this.pos.copy(camera.position);
     const dir = camera.getWorldDirection(new THREE.Vector3());
@@ -146,8 +146,8 @@ export class PhotoMode {
     this.fov = camera.fov;
     this.hideCar = false;
     this.carBtn.classList.add('act');
-    this.orbit = true;
-    this.orbitFrom(this.pos);
+    this.orbit = !free;
+    if (this.orbit) this.orbitFrom(this.pos);
     this.updateHint();
     this.layer.classList.remove('hidden');
     const touch = this.g.touch();

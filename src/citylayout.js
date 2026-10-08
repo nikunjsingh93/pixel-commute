@@ -165,6 +165,27 @@ export class CityLayout {
       st('SKYTREE', 1380 * (L / 2000), 210),
       st('UENO', 1180 * (L / 2000), 95),
     ];
+    // each station opens onto the nearest avenue: the station house sits beside
+    // the track, a plaza runs from its door to the avenue pavement, and a tall
+    // M sign stands at the pavement (so the entrances can be found)
+    for (const s of this.stations) {
+      let best = null;
+      for (const a of this.avenues) {
+        for (const side of [1, -1]) {
+          const edge = a.v + side * (a.hw + this.PAVE);
+          const dir = Math.sign(edge - s.v);
+          if (dir !== -side) continue; // the pavement on the station's side of the avenue
+          const dist = Math.abs(edge - s.v);
+          if (!best || dist < best.dist) best = { dist, edge, dir };
+        }
+      }
+      s.dir = best.dir;
+      s.edgeV = best.edge;
+      s.houseV = s.v + s.dir * (this.metro.hw + 7);
+      s.entrance = { u: s.u, v: s.houseV + s.dir * 5.6 };
+      s.plaza = { u0: s.u - 11, u1: s.u + 11, v0: Math.min(s.houseV + s.dir * 5, s.edgeV), v1: Math.max(s.houseV + s.dir * 5, s.edgeV) };
+      s.sign = { u: s.u + 9, v: s.edgeV - s.dir * 1.4 };
+    }
 
     // ---------------------------------------------------------- landmarks
     this.skytree = { u: 1380 * (L / 2000), v: 328, h: 230 };

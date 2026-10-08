@@ -248,7 +248,7 @@ export function cityMaterials(W) {
   const m = {
     ave: { 1: road(laneTexture(1)), 2: road(laneTexture(2)), 3: road(laneTexture(3)) },
     asphalt: road(plainAsphalt()),
-    terrain: new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }),
+    terrain: new THREE.MeshLambertMaterial({ vertexColors: true }),
     train: new THREE.MeshLambertMaterial({ map: train.map, emissiveMap: train.emissive, emissive: new THREE.Color(1, 1, 1), emissiveIntensity: 0.3 }),
     trainIn: null,
     lattice: new THREE.MeshLambertMaterial({ map: lat.map, emissiveMap: lat.emissive, emissive: new THREE.Color(1, 1, 1), emissiveIntensity: 0.1 }),
@@ -268,7 +268,8 @@ export function cityNight(m, k, snow) {
   m.lattice.emissiveIntensity = 0.05 + 2.2 * k;
   m.bigSign.color.setScalar(0.9 + 0.7 * k);
   m.screen.color.setScalar(1.1 + 0.8 * k);
-  m.terrain.color.setRGB(1 + snow * 1.6, 1 + snow * 1.5, 1 + snow * 1.8);
+  // (snow dusts the slopes; the summit is white already)
+  m.terrain.color.setRGB(1 + snow * 0.55, 1 + snow * 0.5, 1 + snow * 0.65);
 }
 
 // ---------------------------------------------------------------- viaduct

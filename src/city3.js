@@ -6,6 +6,7 @@ import { hash } from './path.js';
 import { CityNet } from './city.js';
 import { LANE, nearestOn, along, cumLen, clamp } from './citylayout.js';
 import { makeCar, pickType, CAR_COLORS, Builder } from './cars.js';
+import { quality } from './quality.js';
 
 const P = CityNet.prototype;
 P.makeCar = makeCar;
@@ -80,8 +81,7 @@ P.edgePos = function edgePos(e, dir, li, t, out) {
 const TYPES_CITY = ['sedan', 'sedan', 'hatch', 'hatch', 'suv', 'van', 'lux', 'sedan', 'taxi', 'taxi', 'bus', 'truck'];
 P.spawnTraffic = function spawnTraffic() {
   this.buildGraph();
-  const mobile = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-  const n = mobile ? 40 : 74;
+  const n = quality.pick([26, 46, 76, 120]);
   const R = (k) => hash(this.f.id * 3.3 + k * 0.917);
   let k = 0;
   const pool = this.gEdges.filter((e) => e.len > 40);
@@ -273,7 +273,7 @@ P.spawnPeople = function spawnPeople() {
   const skins = ['#e8c8a8', '#d8b08a', '#c89a78', '#f0d8c0', '#a87a5a'];
   for (const loop of loops) {
     const busy = clamp(1.2 - Math.hypot((((loop.u0 + loop.u1) / 2) - lay.scramble.u) / 500, (((loop.v0 + loop.v1) / 2) - lay.scramble.v) / 260), 0.3, 1);
-    const n = Math.round(3 + busy * 7);
+    const n = Math.round((3 + busy * 7) * quality.pick([0.35, 0.65, 1, 1.7]));
     for (let i = 0; i < n; i++) {
       peds.push({
         loop, t: R(k++) * loop.len, dir: R(k++) < 0.5 ? 1 : -1, sp: 1.1 + R(k++) * 0.6, off: (R(k++) - 0.5) * 2.6,
@@ -284,7 +284,7 @@ P.spawnPeople = function spawnPeople() {
   // crowd at the scramble: they wait at the corners and cross on the walk phase
   const X = lay.scramble, a = lay.avenues.find((q) => q.id === 'R2'), c = lay.mainCross;
   this.scrCorners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([du, dv]) => ({ u: X.u + du * (c.hw + 2.6), v: X.v + dv * (a.hw + 2.6) }));
-  for (let i = 0; i < 64; i++) {
+  for (let i = 0, nc = quality.pick([24, 40, 64, 100]); i < nc; i++) {
     const ci = i % 4;
     peds.push({
       scr: true, corner: ci, target: ci, ju: (R(k++) - 0.5) * 4, jv: (R(k++) - 0.5) * 4, sp: 1.2 + R(k++) * 0.6,
@@ -309,11 +309,16 @@ P.spawnPeople = function spawnPeople() {
   const head = new THREE.BoxGeometry(0.24, 0.26, 0.24); head.translate(0, 1.64, 0);
   const leg = new THREE.BoxGeometry(0.17, 0.85, 0.18); leg.translate(0, -0.43, 0);
   const hair = new THREE.BoxGeometry(0.26, 0.1, 0.26); hair.translate(0, 1.79, 0);
+  // arms hang from the shoulders (sleeve), hands at their ends (skin)
+  const arm = new THREE.BoxGeometry(0.11, 0.5, 0.13); arm.translate(0, -0.25, 0);
+  const hand = new THREE.BoxGeometry(0.1, 0.12, 0.11); hand.translate(0, -0.56, 0);
   this.pedMesh = {
     body: mk(body, N, (i) => peds[i].shirt),
     head: mk(head, N, (i) => peds[i].skin),
     hair: mk(hair, N, (i) => (hash(i * 3.7) < 0.7 ? '#1c1810' : '#6a4a2a')),
     leg: mk(leg, N * 2, (i) => (hash(i * 1.3) < 0.5 ? '#2a2c34' : '#3a4a6a')),
+    arm: mk(arm, N * 2, (i) => peds[i >> 1].shirt),
+    hand: mk(hand, N * 2, (i) => peds[i >> 1].skin),
   };
 };
 
@@ -618,6 +623,16 @@ P.draw = function draw(origin, glows, night, time) {
       _p.set(w[0] + lx, w[1] + 0.87 + bob, w[2] + lz);
       _m.compose(_p, _q, _s);
       PM.leg.setMatrixAt(n * 2 + i, _m);
+      // arms swing the other way, from the shoulders just outside the body
+      _e.set(-sw * side * 0.8, yaw, side * 0.06, 'YXZ');
+      _q.setFromEuler(_e);
+      const ax = Math.cos(yaw) * 0.29 * side, az = -Math.sin(yaw) * 0.29 * side;
+      _p.set(w[0] + ax, w[1] + 1.46 + bob, w[2] + az);
+      _m.compose(_p, _q, _s);
+      PM.arm.setMatrixAt(n * 2 + i, _m);
+      PM.hand.setMatrixAt(n * 2 + i, _m);
+      PM.arm.setColorAt(n * 2 + i, _col.set(p.shirt));
+      PM.hand.setColorAt(n * 2 + i, _col.set(p.skin));
     }
     n++;
   }
@@ -626,8 +641,11 @@ P.draw = function draw(origin, glows, night, time) {
     PM[k].instanceMatrix.needsUpdate = true;
     if (PM[k].instanceColor) PM[k].instanceColor.needsUpdate = true;
   }
-  PM.leg.count = n * 2;
-  PM.leg.instanceMatrix.needsUpdate = true;
+  for (const k of ['leg', 'arm', 'hand']) {
+    PM[k].count = n * 2;
+    PM[k].instanceMatrix.needsUpdate = true;
+    if (k !== 'leg' && PM[k].instanceColor) PM[k].instanceColor.needsUpdate = true;
+  }
   // trains
   const lay = this.lay, M = lay.metro;
   for (const tr of this.trains) {

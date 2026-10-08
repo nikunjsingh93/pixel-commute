@@ -53,6 +53,7 @@ class RoadGround {
       h += Math.min(1, (p.d - ROAD_R) / 0.08) * 0.16; // curb up onto the verge
       surf = 1;
     }
+    else if (p.d < -14.95) h += 0.16; // the left-hand pavement (reachable on foot)
     out.h = h;
     out.surf = surf;
     return h;
@@ -112,8 +113,11 @@ export class Player {
         // big wheels: the suspension reaches further (mounts sit higher), and
         // each wheel may carry more load
         ...spec, wheelbase: t.L * 0.58, track: t.W - 0.3, mass: 5200, comH: 1.05, rayLen: 0.62 + (0.5 - 0.33), fzMax: 32000,
-        inertia: spec.inertia.clone().multiplyScalar(k * 1.8), maxTorque: 430 * k, brakeTorque: 4400 * k, wheelInertia: 4,
-        kF: 52000 * k, kR: 62000 * k, cBump: 4200 * k, cReb: 6200 * k, radius: 0.5, steerK: 0.75, assistK: 0.6,
+        // inertia of a long box: pitch / yaw ~ m (L^2 + h^2) / 12, roll ~ m (W^2 + h^2) / 12
+        inertia: new THREE.Vector3(5200 * (t.L * t.L + t.H * t.H) / 12, 5200 * (t.L * t.L + t.W * t.W) / 12, 5200 * (t.W * t.W + t.H * t.H) / 12), maxTorque: 430 * k, brakeTorque: 4400 * k, wheelInertia: 4,
+        kF: 52000 * k, kR: 62000 * k, cBump: 4200 * k, cReb: 6200 * k, radius: 0.5,
+        // heavy and long: slow steering, a wide turning circle, modest grip
+        steerK: 0.4, assistK: 0.35, steerRate: 3.2, gripK: 0.86, maxLock: 0.42,
       };
       spec.hull = specFor(def, { L: t.L, W: t.W, H: t.H }).hull.map(([x, y, z]) => [x, y + 0.85 - 1.05, z]);
     }
@@ -158,6 +162,7 @@ export class Player {
     let ck = def.cockpit;
     if (model === 'truck') ck = { dy: 1.05, dz: t.L / 2 - 1.15 + 0.22 };
     else if (model === 'bus') ck = { dy: 0.75, dz: t.L / 2 - 1.35 + 0.22 };
+    else if (model === 'suv') ck = { dy: 0.25, dz: 0 };
     this.cockpit = new Cockpit(ck);
     this.cockpit.setVisible(cockpitVisible);
     this.inner.add(this.cockpit.group, this.cockpit.exterior);

@@ -12,10 +12,10 @@ import { Tokyo, tokyoMaterials } from './tokyo.js';
 import { ROAD_R } from './world.js';
 
 const TILE = 160;
-// tiles whose centre is closer than BUILD_R get built (phones: less)
-const MOBILE = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-const BUILD_R = MOBILE ? 380 : 540;
-const DROP_R = MOBILE ? 520 : 760;
+import { quality } from './quality.js';
+// tiles whose centre is closer than the build radius get built (by quality)
+const buildR = () => quality.pick([320, 420, 540, 700]);
+const dropR = () => quality.pick([460, 580, 760, 920]);
 
 // one layout per city feature (the highway chunks need it too)
 export function cityLayout(f) {
@@ -200,11 +200,19 @@ export class CityNet {
     for (let i = 0; i < nu; i++) {
       for (let j = 0; j < nv; j++) {
         const u = (i + 0.5) * CELL, v = V0 + (j + 0.5) * CELL;
-        let r = lay.nearStreet(u, v, PAVE + 0.4) || lay.inDeckBand(u, v) || lay.inMetro(u, v, 1.5);
+        // the viaduct footprint (+1 m), the ramps beside it, and the metro
+        let r = lay.nearStreet(u, v, PAVE + 0.4) || (v > DECK_V0 - 1.2 && v < DECK_V1 + 1.2) || lay.inMetro(u, v, 1.5);
+        for (const rp of [lay.offRamp, lay.onRamp]) {
+          if (u > Math.min(rp.u0, rp.u1) - 4 && u < Math.max(rp.u0, rp.u1) + 4 && v > 17 && v < lay.RAMP_V + lay.RAMP_HW + 2.5) r = true;
+        }
         r = r || u < 20 || u > L - 20;
         for (const z of [lay.temple, lay.park]) if (u > z.u0 - 2 && u < z.u1 + 2 && v > z.v0 - 2 && v < z.v1 + 2) r = true;
         if (Math.hypot(u - lay.skytree.u, v - lay.skytree.v) < 40) r = true;
-        for (const st of lay.stations) if (Math.abs(u - st.u) < 52 && Math.abs(v - st.v) < 12) r = true;
+        for (const st of lay.stations) {
+          // the platforms + station house, and the plaza out to the avenue
+          if (Math.abs(u - st.u) < 52 && (v - st.v) * st.dir > -12 && (v - st.houseV) * st.dir < 6) r = true;
+          if (u > st.plaza.u0 - 1 && u < st.plaza.u1 + 1 && v > st.plaza.v0 - 1 && v < st.plaza.v1 + 1) r = true;
+        }
         if (Math.abs(u - lay.cable.u) < 18 && v > 380) r = true;
         if (r) occ[i * nv + j] = 1;
       }
@@ -274,6 +282,24 @@ export class CityNet {
         row(Math.PI / 2, c.u, c.v0, c.v1, bFront, side);
       }
     }
+    // shop rows backing onto the viaduct, facing the avenues beside it
+    for (const a of lay.avenues.filter((q) => q.id === 'L1' || q.id === 'R1')) {
+      const side = a.v < 0 ? 1 : -1; // toward the viaduct
+      const front = a.v + side * (a.hw + PAVE + 1.4); // clear of the pavement cells
+      const back = side > 0 ? DECK_V0 - 1.4 : DECK_V1 + 1.4;
+      let s = a.u0 + 2;
+      while (s < a.u1 - 5) {
+        const along = 5.5 + R(k++) * 4.5;
+        const depth = Math.min(10, Math.abs(back - front) - 0.2);
+        const [u0, v0, u1, v1] = [s, front, s + along, front + side * depth];
+        if (depth > 5 && free(u0, u1, v0, v1)) {
+          mark(u0, u1, v0, v1);
+          const B = busy(s, front);
+          recs.push({ kind: 'shop', rot: 0, pivotU: 0, am: s + along / 2, along, bFront: front, side, depth, floors: Math.max(2, Math.round(2 + B * 2 + R(k++) * 2)), u: s + along / 2, v: front + side * depth / 2, seed: R(k++) * 1e4 });
+          s += along + 0.2;
+        } else s += 2;
+      }
+    }
     // the inside of the blocks: apartment / office blocks wherever they fit
     for (let u = 24; u < L - 24; u += 3) {
       for (let v = CITY_V0 - 36; v < 392; v += 3) {
@@ -308,10 +334,15 @@ export class CityNet {
     for (const r of [lay.offRamp, lay.onRamp]) {
       const ua = Math.min(r.uTop, r.uFoot), ub = Math.max(r.uTop, r.uFoot);
       for (let u = ua; u < ub; u += 8) {
-        const h = this.rampH(r, u + 4);
-        add(u + 4, lay.RAMP_V, 8, lay.RAMP_HW * 2 + 0.6, h - 0.2, 'ramp');
+        // just the deck slab (from its soffit to just under the road surface):
+        // streets and cars pass under high parts, cars on the ramp ride over it
+        const h = Math.min(this.rampH(r, u), this.rampH(r, u + 8));
+        if (h < 0.2) continue;
+        this.obstacles.push({ s: this.S + u + 4, d: lay.RAMP_V, L: 8, W: lay.RAMP_HW * 2 + 0.6, y0: base + Math.max(-1, h - 1.3), y1: base + h - 1.0, kind: 'ramp', layer: 'city' });
       }
     }
+    // ramp piers (the same spots as drawn in buildRamps)
+    for (const p of this.rampPiers()) add(p.u, lay.RAMP_V, 1.4, 1.4, p.h - 1.1, 'pier');
     // metro piers (between the street crossings)
     for (let t = 6; t < lay.metroLen; t += 24) {
       const p = along(lay.metroPts, lay.metroCum, t);
@@ -321,6 +352,17 @@ export class CityNet {
   }
 
   // ---------------------------------------------------------------- ramps
+  // pier spots under the elevated part of both ramps, clear of the streets
+  rampPiers() {
+    const lay = this.lay, out = [];
+    for (const r of [lay.offRamp, lay.onRamp]) {
+      for (let u = Math.min(r.uTop, r.uFoot) + 20; u < Math.max(r.uTop, r.uFoot) - 10; u += 30) {
+        const h = this.rampH(r, u);
+        if (h > 2.5 && !lay.cross.some((c) => Math.abs(u - c.u) < c.hw + lay.PAVE + 1.5)) out.push({ u, h });
+      }
+    }
+    return out;
+  }
   // ramp height above the city base at u (the deck height up top)
   rampH(r, u) {
     const top = this.deck(u);
@@ -487,7 +529,7 @@ export class CityNet {
     let best = null, bestD = Infinity;
     for (const t of this.tiles.values()) {
       const dist = Math.hypot(t.u - fu, t.v - fv);
-      const bR = this.wide ? 2400 : BUILD_R, dR = this.wide ? 2600 : DROP_R;
+      const bR = this.wide ? 2400 : buildR(), dR = this.wide ? 2600 : dropR();
       if (!t.built && dist < bR && dist < bestD) { best = t; bestD = dist; }
       if (t.built && dist > dR) { this.dropTile(t); changed = true; }
     }

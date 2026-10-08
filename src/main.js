@@ -18,6 +18,7 @@ import { Audio } from './audio.js';
 import { Radio, STATIONS } from './radio.js';
 import { Commute } from './goals.js';
 import { Foot } from './foot.js';
+import { quality } from './quality.js';
 import { Panel, button, esc } from './ui.js';
 
 const params = new URLSearchParams(location.search);
@@ -199,6 +200,14 @@ function cycleResolution() {
   hud.say(`RESOLUTION ${st.w}X${st.h}`);
 }
 
+// graphics quality: low -> medium -> high -> ultra -> low (rebuilds the world)
+function cycleQuality() {
+  quality.level = (quality.level + 1) % 4;
+  updateFocus();
+  world.resetQuality(world.focus.s);
+  hud.say('GRAPHICS: ' + quality.name, 1.8);
+}
+
 // one-shot actions, shared by the keyboard and the touch buttons
 function action(k) {
   if (photo.active) {
@@ -225,7 +234,8 @@ function action(k) {
 function enterPhoto() {
   if (st.mode !== 'drive') return;
   st.paused = false;
-  photo.enter(camera);
+  // on foot: start from exactly what you see (free camera at your eyes)
+  photo.enter(camera, foot && foot.active);
 }
 function exitPhoto() {
   photo.exit();
@@ -312,6 +322,9 @@ function runAction(k) {
       break;
     case 'KeyRun':
       foot.run = !foot.run;
+      break;
+    case 'Space':
+      if (foot.active) foot.jump();
       break;
     case 'KeyX':
       player.manual = !player.manual;
@@ -406,6 +419,7 @@ const pauseMenu = new Menu('pause-menu', [
   { label: (m) => `Radio<small>${m.radio ? m.station : 'off'}</small>`, run: () => openRadio(), act: (m) => m.radio, spin: false },
   { label: () => 'Next station<small>tune</small>', run: () => runAction('KeyN') },
   { label: (m) => `Resolution<small>${m.res}</small>`, run: () => cycleResolution() },
+  { label: () => `Graphics<small>${quality.name.toLowerCase()}</small>`, run: () => cycleQuality() },
   { label: () => 'Fullscreen<small>toggle</small>', run: () => toggleFullscreen(), spin: false },
   { label: () => 'Photo<small>mode</small>', run: () => enterPhoto(), spin: false },
   { label: (m) => `Gearbox<small>${m.manual ? 'manual' : 'auto'}</small>`, run: () => runAction('KeyX'), act: (m) => m.manual },
@@ -528,12 +542,14 @@ setInterval(() => {
 foot = new Foot({ world, player, traffic, camera, keys, hud, audio });
 
 // ------------------------------------------------------------------ photo mode
+const _photoFocus = new THREE.Vector3();
 const photo = new PhotoMode({
   keys,
   camera,
   touch: () => st.touch,
   press: (code) => action(code),
-  carPos: () => player.mesh.position,
+  // what the photo camera orbits / stays near: you on foot, or the car
+  carPos: () => (foot && foot.active ? _photoFocus.set(foot.pos.x - world.origin.x, foot.y - world.origin.y + 0.2, foot.pos.z - world.origin.z) : player.mesh.position),
   groundY: (x, z) => player.groundP.ground(x + world.origin.x, z + world.origin.z, {}) - world.origin.y,
   shutter: () => audio.shutter && audio.shutter(),
   snapCanvas: () => {

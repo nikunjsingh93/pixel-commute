@@ -34,27 +34,73 @@ export class Audio {
       d[i] = w * 0.5 + b * 2.5;
     }
 
-    // engine: two detuned saws -> lowpass
+    // engine: a four-stroke four-cylinder. The base tone is the crank
+    // frequency (rpm / 60) with a custom harmonic spectrum: the firing order
+    // (2nd harmonic) and its multiples strong, the odd ones weak (the
+    // "lumpy" character), rolled off high up. Two copies a hair apart beat
+    // like real cylinders. A noise "combustion" layer is pulsed at the firing
+    // rate. Throttle opens the lowpass (intake / exhaust bark), and a peak
+    // around 120 Hz gives the exhaust body.
+    const N = 40;
+    const re = new Float32Array(N), im = new Float32Array(N);
+    for (let k = 1; k < N; k++) {
+      const firing = k % 2 === 0; // multiples of the firing frequency (2x crank)
+      const order4 = k % 4 === 0;
+      const a = (firing ? 1 : 0.22) * (order4 ? 1.25 : 1) / Math.pow(k, 0.85);
+      im[k] = a * (0.7 + 0.3 * Math.sin(k * 1.7)); // varied phases: less buzzy
+      re[k] = a * 0.3 * Math.cos(k * 2.3);
+    }
+    const wave = ctx.createPeriodicWave(re, im, { disableNormalization: false });
     this.eng = ctx.createGain();
     this.eng.gain.value = 0.0;
     this.engLP = ctx.createBiquadFilter();
     this.engLP.type = 'lowpass';
-    this.engLP.frequency.value = 300;
-    this.engLP.Q.value = 2;
+    this.engLP.frequency.value = 400;
+    this.engLP.Q.value = 0.6;
+    this.engBody = ctx.createBiquadFilter();
+    this.engBody.type = 'peaking';
+    this.engBody.frequency.value = 120;
+    this.engBody.Q.value = 1.1;
+    this.engBody.gain.value = 7;
+    this.engHP = ctx.createBiquadFilter();
+    this.engHP.type = 'highpass';
+    this.engHP.frequency.value = 28;
     this.o1 = ctx.createOscillator();
-    this.o1.type = 'sawtooth';
+    this.o1.setPeriodicWave(wave);
     this.o2 = ctx.createOscillator();
-    this.o2.type = 'sawtooth';
-    this.o2.detune.value = 9;
+    this.o2.setPeriodicWave(wave);
+    this.o2.detune.value = 6;
+    const g1 = ctx.createGain(), g2 = ctx.createGain();
+    g1.gain.value = 0.6;
+    g2.gain.value = 0.45;
+    this.o1.connect(g1).connect(this.engLP);
+    this.o2.connect(g2).connect(this.engLP);
+    // a low sub at the firing rate
     this.sub = ctx.createOscillator();
     this.sub.type = 'sine';
     const sg = ctx.createGain();
-    sg.gain.value = 0.6;
-    this.o1.connect(this.engLP);
-    this.o2.connect(this.engLP);
+    sg.gain.value = 0.35;
     this.sub.connect(sg).connect(this.engLP);
-    this.engLP.connect(this.eng).connect(this.master);
-    this.o1.start(); this.o2.start(); this.sub.start();
+    // combustion noise, amplitude-modulated at the firing rate
+    const nsrc = ctx.createBufferSource();
+    nsrc.buffer = this.noise;
+    nsrc.loop = true;
+    const nbp = ctx.createBiquadFilter();
+    nbp.type = 'bandpass';
+    nbp.frequency.value = 180;
+    nbp.Q.value = 0.8;
+    this.combBP = nbp;
+    this.comb = ctx.createGain();
+    this.comb.gain.value = 0;
+    this.pulse = ctx.createOscillator();
+    this.pulse.type = 'sine';
+    this.pulseDepth = ctx.createGain();
+    this.pulseDepth.gain.value = 0;
+    this.pulse.connect(this.pulseDepth).connect(this.comb.gain);
+    nsrc.connect(nbp).connect(this.comb).connect(this.engLP);
+    nsrc.start(0, Math.random());
+    this.engLP.connect(this.engBody).connect(this.engHP).connect(this.eng).connect(this.master);
+    this.o1.start(); this.o2.start(); this.sub.start(); this.pulse.start();
 
     // tyre / wind roar
     this.roar = this.loopNoise('lowpass', 500, 0);
@@ -110,14 +156,22 @@ export class Audio {
   update(speed, throttle, rain, scrape, engineRpm = 2000, slip = 0) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    // the engine note follows the simulated rpm
-    const rpm = Math.min(1, engineRpm / 6400);
-    const f = 22 + engineRpm / 26;
-    this.o1.frequency.setTargetAtTime(f, t, 0.08);
-    this.o2.frequency.setTargetAtTime(f * 1.003, t, 0.08);
-    this.sub.frequency.setTargetAtTime(f / 2, t, 0.08);
-    this.engLP.frequency.setTargetAtTime(220 + throttle * 500 + rpm * 300, t, 0.1);
-    this.eng.gain.setTargetAtTime(0.05 + throttle * 0.05, t, 0.1);
+    // the engine follows the simulated rpm and the throttle
+    const rpm = Math.max(600, engineRpm);
+    const crank = rpm / 60, firing = crank * 2;
+    const x = Math.min(1, rpm / 6800);
+    this.o1.frequency.setTargetAtTime(crank, t, 0.05);
+    this.o2.frequency.setTargetAtTime(crank * 1.004, t, 0.05);
+    this.sub.frequency.setTargetAtTime(firing, t, 0.05);
+    this.pulse.frequency.setTargetAtTime(firing, t, 0.05);
+    // closed throttle: muffled; open: the exhaust opens up and gets louder
+    this.engLP.frequency.setTargetAtTime(260 + throttle * 900 + x * 700, t, 0.08);
+    this.engBody.frequency.setTargetAtTime(95 + x * 90, t, 0.1);
+    this.combBP.frequency.setTargetAtTime(120 + firing * 1.5, t, 0.08);
+    const load = 0.25 + throttle * 0.75;
+    this.comb.gain.setTargetAtTime(0.05 * load, t, 0.08);
+    this.pulseDepth.gain.setTargetAtTime(0.05 * load, t, 0.08);
+    this.eng.gain.setTargetAtTime(0.11 + throttle * 0.08 + x * 0.04, t, 0.08);
     this.roar.g.gain.setTargetAtTime(Math.min(0.12, speed * 0.0028), t, 0.2);
     this.roar.f.frequency.setTargetAtTime(300 + speed * 18, t, 0.2);
     this.rainN.g.gain.setTargetAtTime(rain * 0.05, t, 0.5);

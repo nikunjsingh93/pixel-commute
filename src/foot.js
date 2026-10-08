@@ -3,7 +3,7 @@
 // mini GTA style), take the metro from a station, or the cable car up the
 // mountain. Positions are absolute world coordinates like the car's.
 import * as THREE from 'three';
-import { ROAD_L, GUARD_R } from './world.js';
+import { ROAD_L, GUARD_R, GUARD_L, WALL_D } from './world.js';
 import { carById } from './garage.js';
 
 const WALK = 2.2, RUN = 6.5, EYE = 1.62, RAD = 0.32;
@@ -212,8 +212,16 @@ export class Foot {
     this.pitch = Math.max(-1.35, Math.min(1.35, this.pitch - dy * 0.0028));
   }
 
+  // jump (Space): about 1.2 m, enough to clear guard rails and low walls
+  jump() {
+    if (this.ride || !this.active) return;
+    if (this.lastGy !== undefined && this.y > this.lastGy + 0.05) return; // already in the air
+    this.vy = 4.9;
+  }
+
   update(dt, keys) {
     if (this.ride) return this.updateRide(dt);
+    this.prevD = this.locate().d;
     const W = this.g.world;
     // input: keys or the touch stick
     let mx = 0, mz = 0;
@@ -242,15 +250,17 @@ export class Foot {
       this.pos.z = nz;
     }
     this.fences();
-    // gravity / stick to the ground
+    // gravity / jumping / stick to the ground
     const gy = this.groundAt(this.pos.x, this.pos.z, this.y + 0.6);
-    if (this.y > gy + 0.05) {
+    if (this.vy > 0 || this.y > gy + 0.05) {
       this.vy -= 9.8 * dt;
       this.y = Math.max(gy, this.y + this.vy * dt);
+      if (this.y <= gy) this.vy = 0;
     } else {
       this.y = gy;
       this.vy = 0;
     }
+    this.lastGy = gy;
     this.bob += sp * dt * 1.9;
     this.locate();
     // what can we do here?
@@ -273,6 +283,7 @@ export class Foot {
         return;
       }
     }
+    if (!net) return this.openFences(q);
     let dd = 0;
     if (q.d < ROAD_L + 0.35) dd = ROAD_L + 0.35 - q.d;
     const maxD = net ? net.hwMax(q.s, GUARD_R - 0.35) : GUARD_R - 0.35;
@@ -287,6 +298,34 @@ export class Foot {
       }
       dd = maxD - q.d;
     }
+    this.pos.x += q.rx * dd;
+    this.pos.z += q.rz * dd;
+  }
+
+  // the open highway: the median and both guard rails can be jumped over
+  // (but not walked through); beyond them the pavements, up to the shops
+  // or a retaining wall. Tunnels, the harbour and toll plazas stay walled.
+  openFences(q) {
+    const W = this.g.world, PL = W.planner;
+    const air = this.y - (this.lastGy !== undefined ? this.lastGy : this.y);
+    const prev = this.prevD !== undefined ? this.prevD : q.d;
+    let d = q.d;
+    const closed = PL.at(q.s, 'tunnel', 5) || PL.at(q.s, 'harbor', 5) || PL.at(q.s, 'toll', 20) || PL.at(q.s, 'city', 5);
+    const walls = [[-1.7, 0.4, 0.95], [GUARD_R + 0.05, 0.12, 0.85], [GUARD_L - 0.05, 0.12, 0.85]];
+    for (const [wd, half, h] of walls) {
+      const crossing = (prev - wd) * (d - wd) <= 0 || Math.abs(d - wd) < half + 0.25;
+      if (!crossing) continue;
+      if (!closed && air >= h - 0.1) continue; // jumped clear over it
+      d = prev < wd ? Math.min(d, wd - half - 0.3) : Math.max(d, wd + half + 0.3);
+    }
+    // outer limits
+    const dist = PL.district(q.s);
+    let maxD = closed ? GUARD_R - 0.35 : W.wallH(q.s) > 0.4 ? WALL_D - 0.3 : W.paveR(dist) - 0.8;
+    let minD = closed ? GUARD_L + 0.35 : W.paveL(dist) + 0.8;
+    if (closed && prev < -1.7) maxD = -2.4; // stay on your side of the median there
+    if (closed && prev > -1.7) minD = ROAD_L + 0.35;
+    d = Math.max(minD, Math.min(maxD, d));
+    const dd = d - q.d;
     this.pos.x += q.rx * dd;
     this.pos.z += q.rz * dd;
   }
@@ -375,7 +414,7 @@ export class Foot {
   endRide(st) {
     const net = this.ride.net;
     this.ride = null;
-    const w = net.wp(st.entrance.u, st.entrance.v + (st.v < 150 ? -2.5 : 2.5), 0);
+    const w = net.wp(st.entrance.u, st.entrance.v + st.dir * 2.5, 0);
     this.pos.set(net.A.x + w[0], 0, net.A.z + w[2]);
     this.y = net.base;
     this.locate();

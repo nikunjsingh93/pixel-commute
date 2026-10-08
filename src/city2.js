@@ -4,12 +4,13 @@
 // and cable car. Plus the per-tile extras (pavement furniture, the space
 // under the expressway). Installed onto CityNet.prototype.
 import * as THREE from 'three';
-import { hash } from './path.js';
+import { hash, vnoise } from './path.js';
 import { CityNet } from './city.js';
 import { CITY_V0, CITY_V1, DECK_V0, DECK_V1, nearestOn, along, cumLen, clamp } from './citylayout.js';
 import { upQuad, wallQuad, lbox, ribbon } from './citybuild.js';
 import { Tokyo, leafBall, ATLAS } from './tokyo.js';
 import { billboardTexture } from './textures.js';
+import { quality } from './quality.js';
 import { font } from './font.js';
 
 const P = CityNet.prototype;
@@ -97,12 +98,10 @@ P.buildRamps = function buildRamps(G, glows) {
       const C = this.wp(ub + nu * w, vb + nv * w, Math.max(0, hb - 1.1)), D = this.wp(ub - nu * w, vb - nv * w, Math.max(0, hb - 1.1));
       raw.bridge.quadOut([A, B, C, D], null, this.wp((ua + ub) / 2, (va + vb) / 2, Math.max(ha, hb) + 1));
     }
-    // piers under the elevated part
-    for (let u = Math.min(r.uTop, r.uFoot) + 20; u < Math.max(r.uTop, r.uFoot) - 10; u += 30) {
-      const h = this.rampH(r, u);
-      if (h > 2.5) lbox(raw.bridge, this, u, lay.RAMP_V, 0, 1.4, 1.4, h - 1.1);
-    }
+
   }
+  // ramp piers (clear of the streets)
+  for (const p of this.rampPiers()) lbox(raw.bridge, this, p.u, lay.RAMP_V, 0, 1.4, 1.4, p.h - 1.1);
   // aux lanes on the deck: surface + outer parapet with the ramp mouth open
   for (const [a0, a1] of lay.aux) {
     const yA = (u) => this.deck(u) + 0.01;
@@ -235,24 +234,49 @@ P.buildMetro = function buildMetro(G, glows, lights) {
       }
       st['platform' + (side > 0 ? 'R' : 'L')] = { u: cu, v: cv };
     }
-    // station house below (one side), entrance facing the street
-    const hu = st.u, hv = st.v + (st.v < 150 ? -1 : 1) * (M.hw + 9);
+    // station house beside the track, its door toward the avenue
+    const hu = st.u, hv = st.houseV, dir = st.dir;
     lbox(raw.building, this, hu, hv, -0.5, 26, 10, 6.5, yaw);
     lbox(raw.colored, this, hu, hv, 6, 27, 11, 0.4, yaw);
-    st.entrance = { u: hu, v: hv + (st.v < 150 ? -5.6 : 5.6) };
+    // the doorway: a lit opening with a canopy
+    lbox(G.col('#1c2a24'), this, hu, hv + dir * 5.02, 0.02, 6, 0.08, 3.2);
+    lbox(G.col('#e8e4da'), this, hu, hv + dir * 5.6, 3.3, 8, 1.4, 0.25);
     this.obstacles.push({ s: this.S + hu, d: hv, L: 26, W: 10, y0: this.base - 1, y1: this.base + 6.5, kind: 'building', layer: 'city' });
-    // the name sign over the entrance (both faces)
+    // the plaza out to the avenue: paving, benches, a few trees
+    const pz = st.plaza;
+    upQuad(raw.pave, this, pz.u0, pz.u1, pz.v0, pz.v1, 0.15, (u, v) => [u / 4, v / 4]);
+    for (const du of [-8, 8]) {
+      for (let v = pz.v0 + 4; v < pz.v1 - 3; v += 9) this.leafTree(G, st.u + du, v, 0.15, 0.85);
+    }
+    // name boards over the door, both ways
     const mat = nameMat(st.name);
     for (const face of [1, -1]) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(9, 3.4), mat);
-      const p = this.wp(hu, st.entrance.v + face * 0.02 * 0, 7.2);
-      const nside = st.v < 150 ? -1 : 1;
-      m.position.set(p[0] + this.Rv.x * nside * 0.2, p[1], p[2] + this.Rv.z * nside * 0.2);
-      m.rotation.y = Math.atan2(this.Rv.x * nside * face, this.Rv.z * nside * face);
+      const p = this.wp(hu, hv + dir * 5.1, 4.8);
+      m.position.set(p[0] + this.Rv.x * dir * 0.05, p[1], p[2] + this.Rv.z * dir * 0.05);
+      m.rotation.y = Math.atan2(this.Rv.x * dir * face, this.Rv.z * dir * face);
       (this.fixedMeshes = this.fixedMeshes || []).push(m);
     }
-    const p = this.wp(st.entrance.u, st.entrance.v, 3);
-    glows.push({ x: p[0] + this.A.x, y: p[1] + this.A.y, z: p[2] + this.A.z, r: 0.3, g: 1.2, b: 0.6, size: 1.2, h: 3, always: 1 });
+    // the tall M sign at the avenue: a lit green cube on a pole, seen from afar
+    const sg = st.sign;
+    lbox(raw.metal, this, sg.u, sg.v, 0.15, 0.3, 0.3, 6.2);
+    lbox(G.col('#1d6b45'), this, sg.u, sg.v, 6.2, 1.8, 1.8, 1.8);
+    const mMat = this.metroSignMat || (this.metroSignMat = new THREE.MeshBasicMaterial({ map: billboardTexture(['M', 'METRO'], '#1d6b45', '#f4f1e8', font), color: new THREE.Color(1.5, 1.5, 1.5) }));
+    for (let k = 0; k < 4; k++) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.7), mMat);
+      const ang = (k * Math.PI) / 2;
+      const ou = Math.cos(ang) * 0.92, ov = Math.sin(ang) * 0.92;
+      const p = this.wp(sg.u + ou, sg.v + ov, 7.1);
+      m.position.set(p[0], p[1], p[2]);
+      const nx = this.F.x * ou + this.Rv.x * ov, nz = this.F.z * ou + this.Rv.z * ov;
+      m.rotation.y = Math.atan2(nx, nz);
+      (this.fixedMeshes = this.fixedMeshes || []).push(m);
+    }
+    this.obstacles.push({ s: this.S + sg.u, d: sg.v, L: 0.4, W: 0.4, y0: this.base - 1, y1: this.base + 8, layer: 'city' });
+    for (const [u, v, h] of [[sg.u, sg.v, 7.1], [st.entrance.u, st.entrance.v, 3]]) {
+      const p = this.wp(u, v, h);
+      glows.push({ x: p[0] + this.A.x, y: p[1] + this.A.y, z: p[2] + this.A.z, r: 0.3, g: 1.3, b: 0.6, size: h > 5 ? 2.2 : 1.2, h, always: 1 });
+    }
   }
 };
 
@@ -363,7 +387,7 @@ P.buildTemple = function buildTemple(G, glows, lights) {
     lbox(G.col(STONE), this, cu + du, Z.v1 - 30, 0.06, 0.8, 0.8, 1.8);
     lbox(G.col(STONE), this, cu + du, Z.v1 - 30, 1.8, 1.3, 1.3, 0.7);
   }
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0, nT = quality.pick([16, 26, 40, 60]); i < nT; i++) {
     const u = Z.u0 + 4 + hash(i * 1.7) * (Z.u1 - Z.u0 - 8), v = Z.v0 + 4 + hash(i * 2.9) * (Z.v1 - Z.v0 - 8);
     if (Math.abs(u - cu) < 18 && v > Z.v0 + 6) continue;
     if (Math.hypot(u - pu, v - pv) < 9) continue;
@@ -418,7 +442,7 @@ P.buildPark = function buildPark(G) {
   upQuad(G.col('#b8ab90'), this, Z.u0 + 2, Z.u1 - 2, cv - 21, cv - 17, 0.04);
   upQuad(G.col('#b8ab90'), this, cu - 2, cu + 2, Z.v0 + 2, Z.v1 - 2, 0.03);
   this.obstacles.push({ s: this.S + cu, d: cv, L: 50, W: 30, y0: this.base - 1, y1: this.base + 0.6, layer: 'city', kind: 'pond' });
-  for (let i = 0; i < 34; i++) {
+  for (let i = 0, nT = quality.pick([20, 34, 52, 80]); i < nT; i++) {
     const u = Z.u0 + 4 + hash(i * 5.3 + 1) * (Z.u1 - Z.u0 - 8), v = Z.v0 + 4 + hash(i * 6.1 + 2) * (Z.v1 - Z.v0 - 8);
     if (Math.abs(u - cu) < 28 && Math.abs(v - cv) < 18) continue;
     if (Math.abs(u - cu) < 3 || Math.abs(v - (cv - 19)) < 3) continue;
@@ -466,43 +490,56 @@ P.buildScramble = function buildScramble(G, glows) {
 // ---------------------------------------------------------------- mountain
 P.buildMountain = function buildMountain(G, glows, lights) {
   const raw = G.raw, lay = this.lay, L = this.L;
-  const STEP = 10;
+  // one shared grid of vertices (so colours blend smoothly and the slopes are
+  // lit smoothly), coloured by height, slope and broad noise patches
+  const STEP = 8;
   const U0 = 0, U1 = L, V0 = 390, V1 = 1400;
   const nu = Math.round((U1 - U0) / STEP), nv = Math.round((V1 - V0) / STEP);
   const H = [];
   for (let i = 0; i <= nu; i++) {
-    H.push([]);
-    for (let j = 0; j <= nv; j++) H[i].push(this.mountainH(U0 + i * STEP, V0 + j * STEP));
+    H.push(new Float32Array(nv + 1));
+    for (let j = 0; j <= nv; j++) H[i][j] = this.mountainH(U0 + i * STEP, V0 + j * STEP);
   }
-  const col = new THREE.Color();
   const g = raw.terrain;
-  for (let i = 0; i < nu; i++) {
-    for (let j = 0; j < nv; j++) {
-      const u = U0 + i * STEP, v = V0 + j * STEP;
-      const h00 = H[i][j], h10 = H[i + 1][j], h01 = H[i][j + 1], h11 = H[i + 1][j + 1];
-      const tri = (a, b, c) => {
-        // slope + height colouring: fields low down, forest, rock, snow
-        const hm = (a[1] + b[1] + c[1]) / 3;
-        const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
-        const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
-        const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-        const slope = 1 - Math.abs(ny) / (Math.hypot(nx, ny, nz) || 1);
-        const n = hash(a[0] * 0.13 + a[2] * 0.071);
-        if (slope > 0.35) col.set('#6f6a60');
-        else if (hm > 175) col.set('#d8dde6');
-        else if (hm > 30 && n < 0.7) col.set(n < 0.35 ? '#2f4a32' : '#38553a');
-        else col.set(n < 0.5 ? '#4f6e3c' : '#5a7a42');
-        col.multiplyScalar(0.9 + n * 0.2);
-        g._col = col.clone();
-        const ia = g.v(...a), ib = g.v(...b), ic = g.v(...c);
-        // upward facing
-        if (ny > 0) g.tri(ia, ib, ic); else g.tri(ia, ic, ib);
-      };
-      const A = this.wp(u, v, h00), B = this.wp(u + STEP, v, h10), C = this.wp(u, v + STEP, h01), D = this.wp(u + STEP, v + STEP, h11);
-      tri(A, B, D);
-      tri(A, D, C);
+  const col = new THREE.Color(), tmp = new THREE.Color();
+  const TC = {
+    meadow: new THREE.Color('#5f7f45'), meadow2: new THREE.Color('#728f4c'), forest: new THREE.Color('#2e4a2f'),
+    rock: new THREE.Color('#7a746c'), scree: new THREE.Color('#8f877a'), snow: new THREE.Color('#e3e8ee'), dirt: new THREE.Color('#6b5a44'),
+  };
+  const ss = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const idx = [];
+  for (let i = 0; i <= nu; i++) {
+    idx.push(new Int32Array(nv + 1));
+    for (let j = 0; j <= nv; j++) {
+      const u = U0 + i * STEP, v = V0 + j * STEP, h = H[i][j];
+      const hx = H[Math.min(nu, i + 1)][j] - H[Math.max(0, i - 1)][j], hz = H[i][Math.min(nv, j + 1)] - H[i][Math.max(0, j - 1)];
+      const slope = Math.hypot(hx, hz) / (2 * STEP); // rise over run
+      const n1 = vnoise(u / 140 + v / 97, 41) * 0.5 + 0.5, n2 = vnoise(u / 37 - v / 53, 43) * 0.5 + 0.5;
+      // meadows low down, forest floor in patches higher up, rock on steep
+      // ground, scree / snow near the top
+      col.copy(TC.meadow).lerp(TC.meadow2, n2);
+      col.lerp(TC.forest, ss(0.45, 0.62, n1) * ss(15, 45, h) * 0.9);
+      col.lerp(tmp.copy(TC.rock).lerp(TC.scree, n2), ss(0.55, 0.95, slope));
+      col.lerp(TC.dirt, ss(0.15, 0.3, slope) * (1 - ss(0.55, 0.95, slope)) * 0.25);
+      col.lerp(TC.snow, ss(160, 185, h + n2 * 10));
+      // per-vertex grain so big slopes are not one flat colour
+      col.multiplyScalar(0.86 + n2 * 0.14 + hash(i * 3.17 + j * 7.31) * 0.12);
+      // dark rock strata on steep faces
+      if (slope > 0.6 && Math.sin(h * 0.9 + n1 * 3) > 0.55) col.multiplyScalar(0.78);
+      g._col = col.clone();
+      idx[i][j] = g.v(...this.wp(u, v, h));
     }
   }
+  for (let i = 0; i < nu; i++) {
+    for (let j = 0; j < nv; j++) {
+      const a = idx[i][j], b = idx[i + 1][j], c = idx[i][j + 1], d = idx[i + 1][j + 1];
+      // winding chosen so faces point up (+v is right of +u)
+      const A = this.wp(0, 0, 0), B = this.wp(1, 0, 0), Cc = this.wp(0, 1, 0);
+      const up = (B[2] - A[2]) * (Cc[0] - A[0]) - (B[0] - A[0]) * (Cc[2] - A[2]);
+      if (up > 0) { g.tri(a, b, d); g.tri(a, d, c); } else { g.tri(a, d, b); g.tri(a, c, d); }
+    }
+  }
+  this.terrainSmooth = true;
   // the hill road: a two-way ribbon at the road height, guard rails on the
   // downhill side of each leg, a car park and viewpoint at the summit
   const pts = resample(lay.hill, 4);
@@ -531,21 +568,9 @@ P.buildMountain = function buildMountain(G, glows, lights) {
   // viewpoint deck + telescope
   lbox(G.col('#8a6a4a'), this, sm.u - 30, sm.v + 22, sh, 18, 6, 0.4);
   for (const du of [-38, -22]) lbox(raw.metal, this, sm.u + du + 8, sm.v + 25, sh + 0.4, 0.15, 0.15, 1.2);
-  // forest: conifers on the slopes (not on the road, not on the rock)
-  let k = 0;
-  for (let i = 0; i < 2000 && k < 900; i++) {
-    const u = 120 + hash(i * 1.37 + 3) * (L - 240), v = 410 + hash(i * 2.11 + 7) * 900;
-    if (lay.onHill(u, v, 6)) continue;
-    if (Math.abs(u - lay.cable.u) < 10 && v < lay.cable.v1 + 20) continue;
-    const h = this.mountainH(u, v);
-    if (h > 172) continue;
-    const h2 = this.mountainH(u + 3, v), h3 = this.mountainH(u, v + 3);
-    if (Math.hypot(h2 - h, h3 - h) > 2.4) continue;
-    const forest = hash(Math.floor(u / 90) * 3.7 + Math.floor(v / 90) * 1.9);
-    if (forest < 0.35 && hash(i * 9.1) < 0.7) continue;
-    this.W.tree(raw, this.S + u, v, h - this.deck(u), this.A, hash(i * 5.7), 1);
-    k++;
-  }
+  // forest: instanced conifers in clumps on the slopes (not on the road, the
+  // rock, the snow or under the cable car), denser with higher quality
+  this.buildForest(quality.pick([1500, 3500, 9000, 16000]));
   // cable car: stations, towers, two cable pairs
   const C = lay.cable;
   const sta = (v, h, face) => {
@@ -580,6 +605,74 @@ P.buildMountain = function buildMountain(G, glows, lights) {
       }
     }
   }
+};
+
+// one conifer in local coordinates (origin at the foot of the trunk)
+function pineGeometry(W, GeoB) {
+  const geo = new GeoB();
+  geo.col = '#3a2a1e';
+  const trunk = (x0, x1, z0, z1, y1) => {
+    const P = [[x0, 0, z0], [x1, 0, z0], [x1, 0, z1], [x0, 0, z1]].map(([x, y, z]) => [x, y, z]);
+    for (let k = 0; k < 4; k++) {
+      const a = P[k], b = P[(k + 1) % 4];
+      geo.quadOut([a, b, [b[0], y1, b[2]], [a[0], y1, a[2]]], null, [0, y1 / 2, 0]);
+    }
+  };
+  trunk(-0.16, 0.16, -0.16, 0.16, 1.6);
+  const tiers = 3, H = 7.4;
+  for (let t = 0; t < tiers; t++) {
+    const u = t / (tiers - 1);
+    const y0 = 1.0 + u * (H - 3.0);
+    const rad = (1.9 - 1.45 * u);
+    const h = 2.2 - 0.6 * u;
+    const lift = 0.8 + 0.6 * u;
+    W.needleTier(geo, [0, y0 - (t ? 0.4 : 0), 0], rad * 1.08, h * 1.3, 7, t * 0.9, [0.034 * lift, 0.092 * lift, 0.05 * lift], 0.38);
+  }
+  return geo.build();
+}
+
+P.buildForest = function buildForest(count) {
+  const lay = this.lay, L = this.L;
+  const geom = pineGeometry(this.W, this.GeoB);
+  const mesh = new THREE.InstancedMesh(geom, this.W.mLeaf, count);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), c = new THREE.Color();
+  let n = 0;
+  // a jittered grid; trees grow where the forest mask says so, so they come
+  // in dense woods with clearings between, the spacing set by the budget
+  const area = (L - 120) * 1000;
+  const SP = Math.max(4.2, Math.sqrt(area * 0.17 / count));
+  for (let gu = 60; gu < L - 60 && n < count; gu += SP) {
+    for (let gv = 400; gv < 1400 && n < count; gv += SP) {
+      const i = Math.floor(gu * 7.13 + gv * 3.71);
+      const u = gu + (hash(i * 1.37 + 3) - 0.5) * SP * 0.9, v = gv + (hash(i * 2.11 + 7) - 0.5) * SP * 0.9;
+      const mask = vnoise(u / 120 + v / 90, 61) * 0.6 + vnoise(u / 45 - v / 38, 67) * 0.4;
+      if (mask < -0.08 + hash(i * 9.13) * 0.2) continue;
+    if (lay.onHill(u, v, 5.5)) continue;
+    if (Math.abs(u - lay.cable.u) < 9 && v < lay.cable.v1 + 25) continue;
+    if (Math.abs(u - lay.summit.u) < 60 && Math.abs(v - lay.summit.v) < 40) continue;
+    const h = this.mountainH(u, v);
+    if (h > 166 || h < 1.5) continue;
+    const slope = Math.hypot(this.mountainH(u + 3, v) - h, this.mountainH(u, v + 3) - h) / 3;
+    if (slope > 0.62) continue;
+    // smaller trees higher up (toward the tree line)
+    const k = (0.75 + hash(i * 4.7) * 0.75) * (1 - 0.35 * Math.max(0, (h - 110) / 60));
+    const w = this.wp(u, v, h - 0.25);
+    p.set(w[0], w[1], w[2]);
+    q.setFromAxisAngle(up, hash(i * 3.3) * 6.28);
+    s.set(k * (0.9 + hash(i * 6.1) * 0.25), k, k * (0.9 + hash(i * 7.9) * 0.25));
+    m.compose(p, q, s);
+    mesh.setMatrixAt(n, m);
+    const t = hash(i * 5.5);
+    c.setRGB(0.85 + t * 0.3, 0.9 + t * 0.25, t < 0.3 ? 1.15 : 0.9);
+    mesh.setColorAt(n, c);
+    n++;
+    }
+  }
+  mesh.count = n;
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  mesh.computeBoundingSphere();
+  (this.fixedMeshes = this.fixedMeshes || []).push(mesh);
 };
 
 // mountain height: the layout's terrain, falling away beyond the ridge and
@@ -619,7 +712,8 @@ P.extraTile = function extraTile(G, t, glows, lights, obstacles) {
       if (kerb < v0 || kerb > v1) continue;
       if (lay.underDeck(t.u, kerb)) continue;
       tk.setFrame(this.S, 0, 0);
-      for (let u = Math.max(u0, a.u0) + R(k++) * 6; u < Math.min(u1, a.u1); u += 7 + R(k++) * 7) {
+      const gap = quality.pick([2, 1.35, 1, 0.65]);
+      for (let u = Math.max(u0, a.u0) + R(k++) * 6; u < Math.min(u1, a.u1); u += (7 + R(k++) * 7) * gap) {
         if (lay.nearStreet(u, kerb + side * 2.5, 0) && lay.street(u, kerb + side * 2.5)) continue;
         if (lay.cross.some((c) => Math.abs(u - c.u) < c.hw + 7)) continue;
         if (!clearPost(u, kerb + side * 2)) continue;

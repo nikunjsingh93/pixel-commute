@@ -254,7 +254,16 @@ function build(type, color, opts = {}) {
     head = { y: 0.66, h: 0.12 };
   } else if (type === 'suv') {
     const zr = -L / 2, zf = L / 2;
-    B.tbox(hw, hw - 0.04, 0.38, 1.05, zr, zf, zr + 0.05, zf - 0.15, color, { side: shade, rear: dark });
+    if (opts.separateWheels) {
+      // hollow cabin for the cockpit view (bonnet, tail, door slabs, floor)
+      const cb1 = zf - 1.2, cb0 = zr + 0.2;
+      B.tbox(hw, hw - 0.04, 0.38, 1.05, cb1, zf, cb1, zf - 0.15, color, { side: shade, rear: color, top: color });
+      B.tbox(hw, hw - 0.04, 0.38, 1.05, zr, cb0, zr + 0.05, cb0, color, { side: shade, rear: dark, top: color });
+      B.tbox(hw, hw - 0.04, 0.38, 1.05, cb0, cb1, cb0, cb1, color, { side: shade, sideOnly: true });
+      B.box(-hw + 0.1, hw - 0.1, 0.38, 0.46, cb0, cb1, '#1a1b20');
+    } else {
+      B.tbox(hw, hw - 0.04, 0.38, 1.05, zr, zf, zr + 0.05, zf - 0.15, color, { side: shade, rear: dark });
+    }
     B.box(-hw + 0.02, hw - 0.02, 0.32, 0.56, zr - 0.06, zr + 0.25, TRIM);
     B.box(-hw + 0.02, hw - 0.02, 0.32, 0.56, zf - 0.25, zf + 0.06, TRIM);
     B.tbox(hw - 0.08, hw - 0.18, 1.05, H - 0.06, zr + 0.15, zf - 1.15, zr + 0.3, zf - 1.75, GLASS, { rear: '#4a5670', front: '#3c4760' });

@@ -98,7 +98,7 @@ export class Vehicle {
   maxSteer(v) {
     const S = this.spec;
     const vv = Math.max(v, 1) ** 2;
-    return Math.max(0.025, Math.min(0.7, (21 * S.wheelbase * (S.steerK || 1)) / vv));
+    return Math.max(0.025, Math.min(S.maxLock || 0.7, (21 * S.wheelbase * (S.steerK || 1)) / vv));
   }
 
   // place upright at (x, y = ground, z) heading along (dx, dz)

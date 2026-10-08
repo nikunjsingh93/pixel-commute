@@ -14,6 +14,7 @@ import { CityNet, cityLayout } from './city.js';
 import './city2.js';
 import './city3.js';
 import { buildViaduct } from './citybuild.js';
+import { quality } from './quality.js';
 
 export const CHUNK = 64;
 const DS = 4; // geometry step along the road
@@ -342,7 +343,7 @@ export class World {
     // keep a good stretch behind too: looking back (mouse look, photo mode)
     // should not show the road ending
     const i0 = Math.floor((camS - 280) / CHUNK);
-    const i1 = Math.floor((camS + 680) / CHUNK);
+    const i1 = Math.floor((camS + quality.pick([480, 560, 680, 800])) / CHUNK);
     for (const [i, ch] of this.chunks) {
       if (i < i0 || i > i1) {
         this.root.remove(ch.group);
@@ -1118,6 +1119,21 @@ export class World {
   }
   *allChunks() {
     yield* this.chunks.values();
+  }
+
+  // a graphics quality change: rebuild the cities and the highway around s
+  resetQuality(s) {
+    for (const [id, n] of this.nets) {
+      if (!n.city) continue;
+      n.dispose(this.root);
+      this.nets.delete(id);
+    }
+    for (const [i, ch] of this.chunks) {
+      this.root.remove(ch.group);
+      ch.group.traverse((o) => o.geometry && o.geometry !== this.coneGeo && !o.userData.shared && o.geometry.dispose());
+      this.chunks.delete(i);
+    }
+    this.update(s, true);
   }
 
   // is there an overpass crossing the road between a and b (along s)?

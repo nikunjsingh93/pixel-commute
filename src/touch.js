@@ -63,6 +63,7 @@ export function setupTouch(game) {
   joy.addEventListener('pointerup', jend);
   joy.addEventListener('pointercancel', jend);
   foot.push(button(root, '', '<span>Act</span>', { width: G, height: G, right: br, bottom: bb }, () => game.press('KeyF')));
+  foot.push(button(root, 'small', '<span>Jump</span>', { width: HB, height: HB, right: br, bottom: `calc(${bb} + ${G} + 14px)` }, () => game.press('Space')));
   const runB = button(root, 'small', '<span>Run</span>', { width: HB, height: HB, right: `calc(${br} + ${G} + 14px)`, bottom: bb }, () => game.press('KeyRun'));
   foot.push(runB);
   setInterval(() => {
