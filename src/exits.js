@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { makeCar, CAR_COLORS } from './cars.js';
 import { hash } from './path.js';
-import { Tokyo, ATLAS } from './tokyo.js';
+import { CityKit, ATLAS } from './citykit.js';
 
 const NEAR = 48; // near street centre line (d)
 const FAR = 118; // far street centre line (d)
@@ -413,14 +413,14 @@ export class ExitNet {
       return { x: p.x, y: p.y, z: p.z, col };
     });
 
-    // ---- the town around the loop, in the same Tokyo style as the highway.
+    // ---- the town around the loop, in the same CityKit style as the highway.
     // Every footprint is checked against the streets, ramps, junctions, the
     // forecourt and the delivery bays (with room for the pavements), and
     // becomes a solid obstacle: you can drive off the streets here.
     const PAVE = 4.5;
     const posts = [[L.s, L.d]];
     for (let s = this.sA + 20; s < this.sB - 10; s += 34) posts.push([s, NEAR - ST_HW - 1.6], [s + 17, FAR + ST_HW + 1.6]);
-    const tk = new Tokyo(W, { geo, a: A, glows, wires: this.wires, posts, foot: (s, d, along, across) => this.obstacles.push({ s, d, L: along, W: across, kind: 'building' }) }, R);
+    const tk = new CityKit(W, { geo, a: A, glows, wires: this.wires, posts, foot: (s, d, along, across) => this.obstacles.push({ s, d, L: along, W: across, kind: 'building' }) }, R);
     const margin = { street: ST_HW + PAVE - 0.1, ramp: RAMP_HW + 2.5, aux: AUX_HW + 2.5 };
     const blocked = (s, d) => {
       if (d < 20.5 || d > 172) return true;

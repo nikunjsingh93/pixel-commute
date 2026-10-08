@@ -158,10 +158,10 @@ function signAtlas() {
 }
 const SIGNS = [
   [['GAMEO', 'ARCADE  5F'], '#c8402a', '#ffe9a0'], [['BOOK', 'DOFF  USED'], '#f0c23a', '#2a3a8a'],
-  [['8 BIT', 'ELECTRIC'], '#1f3c7a', '#ffcf4a'], [['RAMEN', 'OPEN 24H'], '#7a1d12', '#fff3d6'],
-  [['KARAOKE', 'PIXEL BOX'], '#2a7a4a', '#f4f1e8'], [['DONKI', 'DISCOUNT'], '#f0d020', '#c8202a'],
-  [['TAXI', 'STAND'], '#1a1a20', '#ffcf4a'], [['MANGA', 'CAFE  2F'], '#4a2a6a', '#ffd6f0'],
-  [['SUSHI', 'KAITEN'], '#e8e4da', '#c8281e'], [['HOTEL', 'BLUE HOUR'], '#23163a', '#9fd0ff'],
+  [['8 BIT', 'ELECTRIC'], '#1f3c7a', '#ffcf4a'], [['NOODLE', 'OPEN 24H'], '#7a1d12', '#fff3d6'],
+  [['SING', 'PIXEL BOX'], '#2a7a4a', '#f4f1e8'], [['MEGA', 'DISCOUNT'], '#f0d020', '#c8202a'],
+  [['TAXI', 'STAND'], '#1a1a20', '#ffcf4a'], [['COMIC', 'CAFE  2F'], '#4a2a6a', '#ffd6f0'],
+  [['DINER', 'GRILL'], '#e8e4da', '#c8281e'], [['HOTEL', 'BLUE HOUR'], '#23163a', '#9fd0ff'],
 ];
 
 // the giant crossing screens: a small canvas redrawn a few times a second
@@ -207,7 +207,7 @@ export class Screens {
       g.fillStyle = '#e0701e';
       g.fillRect(0, 28, W, 12);
       font.draw(g, 'NEWS', 2, 2, 2, '#ffffff');
-      const msg = 'SNOW TONIGHT IN NEO TOKYO   TRAINS ON TIME   ';
+      const msg = 'SNOW TONIGHT IN NEON BAY   TRAINS ON TIME   ';
       font.draw(g, msg + msg, 2 - (p * 2) % (font.measure(msg)), 31, 1, '#0b1230');
     } else if (scene === 2) {
       // a soda can that spins

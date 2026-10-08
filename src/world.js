@@ -9,7 +9,7 @@ import * as T from './textures.js';
 import { font } from './font.js';
 import { buildTunnel, buildHarbor, buildWorks, buildToll } from './features.js';
 import { ExitNet } from './exits.js';
-import { Tokyo, tokyoMaterials, tokyoNight } from './tokyo.js';
+import { CityKit, kitMaterials, kitNight } from './citykit.js';
 import { CityNet, cityLayout } from './city.js';
 import './city2.js';
 import './city3.js';
@@ -179,7 +179,7 @@ export class World {
       [['8 BIT', 'BURGERS 24/7'], '#1d2c55', '#f0c040'],
       [['HOTEL', 'BLUE HOUR INN'], '#23163a', '#9fd0ff'],
       [['FM 88', 'LOFI RADIO'], '#0f3a3a', '#7fe8d0'],
-      [['RAMEN', 'NEXT EXIT'], '#3a1a0e', '#ff8a4a'],
+      [['NOODLES', 'NEXT EXIT'], '#3a1a0e', '#ff8a4a'],
     ];
     this.mBoards = boards.map(([lines, bg, fg]) =>
       new THREE.MeshBasicMaterial({ map: T.billboardTexture(lines, bg, fg, font), color: new THREE.Color(1.4, 1.4, 1.4) }));
@@ -208,7 +208,7 @@ export class World {
     this.mStreet = new THREE.MeshStandardMaterial({ map: street, roughness: 0.6, roughnessMap: puddles, envMapIntensity: 0.35 });
     this.mRamp = new THREE.MeshStandardMaterial({ map: ramp, roughness: 0.6, roughnessMap: puddles, envMapIntensity: 0.35 });
     this.mCanopy = new THREE.MeshLambertMaterial({ color: '#e8e4da' });
-    this.tk = tokyoMaterials();
+    this.tk = kitMaterials();
     this.exitSignMats = new Map();
   }
 
@@ -252,7 +252,7 @@ export class World {
     for (const m of this.mBoards) m.color.setScalar(0.75 + 0.75 * k);
     const on = Math.floor(time * 1.6) % 2 === 0; // roadworks arrow board flashes
     this.mArrow.color.setScalar(on ? 1.8 : 0.15);
-    tokyoNight(this.tk, k);
+    kitNight(this.tk, k);
   }
 
   // ---------------------------------------------------------------- geometry helpers
@@ -672,7 +672,7 @@ export class World {
       if (distAt(s).town > 0.4 && !inExit(s)) this.cityLamp(geo, s, WALL_D + 2.6, -1, hh(s), anchor, glows, lights);
       if (isLand(s + 8) && distAt(s + 8).town > 0.4) this.cityLamp(geo, s + 8, -16.4, 1, 0.16, anchor, glows, lights);
     }
-    // trees: forests in the countryside (town pavements get street trees in planters, see tokyo.js)
+    // trees: forests in the countryside (town pavements get street trees in planters, see citykit.js)
     for (let s = s0 + 2 + R(3) * 3, k = 0; s < s1; s += 4 + R(10 + k) * 5, k++) {
       if (nearBridge(s, 9) || !isLand(s) || (P.mask(s, 30) > 0.5 && !inExit(s))) continue;
       const dd = distAt(s);
@@ -898,7 +898,7 @@ export class World {
     const { geo, a, glows, s0 } = c;
     const R = (k) => hash(ci * 31.7 + k * 3.13 + 9.1);
     const P = this.planner;
-    const tk = new Tokyo(this, c, R);
+    const tk = new CityKit(this, c, R);
     const END = s0 + CHUNK - 0.5; // nothing may reach into the next chunk
     let k = 0;
     const clearFor = (side) => (s, along, pad) =>
@@ -930,7 +930,7 @@ export class World {
             const vOff = Math.floor(R(k++) * 16) / 16;
             this.boxBuilding(geo.building, sm, d, base - 0.5, along, depth, h + 0.5, a, uOff, vOff);
             this.shopFront(geo.shop, sm, front - side * 0.12, base, along, side, a, R(k++));
-            // Tokyo dressing: a sign over the shop, vertical signs up the corners
+            // CityKit dressing: a sign over the shop, vertical signs up the corners
             const f = this.path.sample(sm, {});
             f.s = sm;
             if (R(k++) < 0.7) tk.hsign(f, along, front, side, base + 4.55);

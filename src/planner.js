@@ -97,7 +97,7 @@ export class Planner {
     }
     if (type === 'works') f.lane = 3; // the right-hand lane is closed
     if (type === 'city') {
-      f.name = ['NEO TOKYO', 'PIXEL CITY', 'MINATO', 'SHINJUKU'][this.nCity = (this.nCity || 0) + 1, (this.nCity - 1) % 4];
+      f.name = ['NEON BAY', 'PIXEL CITY', 'LUMEN HEIGHTS', 'NOVA PORT'][this.nCity = (this.nCity || 0) + 1, (this.nCity - 1) % 4];
       this.end = f.s1 + CITY_PAD; // keep the levelled approach clear of other features
       this.features.push(f);
       return;

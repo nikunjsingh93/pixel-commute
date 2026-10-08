@@ -8,7 +8,7 @@ import { hash } from './path.js';
 import { deckAt } from './planner.js';
 import { CityLayout, LANE, DECK_V0, DECK_V1, CITY_V0, CITY_V1, nearestOn, cumLen, along, clamp } from './citylayout.js';
 import { cityMaterials, cityNight, buildStreets, upQuad, wallQuad, lbox, ribbon } from './citybuild.js';
-import { Tokyo, tokyoMaterials } from './tokyo.js';
+import { CityKit, kitMaterials } from './citykit.js';
 import { ROAD_R } from './world.js';
 
 const TILE = 160;
@@ -636,7 +636,7 @@ export class CityNet {
     t.obstacles = obstacles;
   }
 
-  // the planned buildings of a tile, drawn with the Tokyo builders (in road
+  // the planned buildings of a tile, drawn with the CityKit builders (in road
   // space: a = s, b = d, turned for the cross streets)
   buildRecs(G, t, glows, obstacles) {
     if (!t.recs.length) return;
@@ -647,7 +647,7 @@ export class CityNet {
       geo: G.raw, a: this.A, glows, wires: this.wiresFor(t), posts: null,
       foot: (s, d, L, W) => obstacles.push({ s, d, L, W, y0: base - 1, y1: base + 60, kind: 'building', layer: 'city' }),
     };
-    const tk = new Tokyo(this.W, ctx, (k) => R(k + kk));
+    const tk = new CityKit(this.W, ctx, (k) => R(k + kk));
     for (const r of t.recs) {
       kk += 97;
       tk.k = 1000 + Math.floor(r.seed);

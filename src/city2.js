@@ -8,7 +8,7 @@ import { hash, vnoise } from './path.js';
 import { CityNet } from './city.js';
 import { CITY_V0, CITY_V1, DECK_V0, DECK_V1, nearestOn, along, cumLen, clamp } from './citylayout.js';
 import { upQuad, wallQuad, lbox, ribbon } from './citybuild.js';
-import { Tokyo, leafBall, ATLAS } from './tokyo.js';
+import { CityKit, leafBall, ATLAS } from './citykit.js';
 import { billboardTexture } from './textures.js';
 import { quality } from './quality.js';
 import { font } from './font.js';
@@ -351,7 +351,7 @@ P.buildTemple = function buildTemple(G, glows, lights) {
   const lp = this.wp(cu, Z.v1 - 4, 4.2);
   glows.push({ x: lp[0] + this.A.x, y: lp[1] + this.A.y, z: lp[2] + this.A.z, r: 1.2, g: 0.3, b: 0.15, size: 2.4, h: 4.2 });
   // Nakamise: two rows of small stalls along the approach
-  const tk = new Tokyo(this.W, { geo: raw, a: this.A, glows, wires: [], foot: (s, d, L, W) => this.obstacles.push({ s, d, L, W, y0: this.base - 1, y1: this.base + 8, layer: 'city' }) }, (k) => hash(k * 0.37 + this.f.id));
+  const tk = new CityKit(this.W, { geo: raw, a: this.A, glows, wires: [], foot: (s, d, L, W) => this.obstacles.push({ s, d, L, W, y0: this.base - 1, y1: this.base + 8, layer: 'city' }) }, (k) => hash(k * 0.37 + this.f.id));
   tk.setFrame(this.S + cu, 0, Math.PI / 2);
   for (const side of [1, -1]) {
     for (let v = Z.v1 - 12; v > Z.v1 - 42; v -= 5) {
@@ -709,7 +709,7 @@ P.extraTile = function extraTile(G, t, glows, lights, obstacles) {
   let k = 0;
   const posts = this.posts;
   const clearPost = (u, v) => !posts.some(([pu, pv]) => Math.abs(pu - u) < 2.6 && Math.abs(pv - v) < 2.6);
-  const tk = new Tokyo(this.W, { geo: raw, a: this.A, glows, wires: this.wiresFor(t), posts: null, foot: null }, (q) => R(q + 500));
+  const tk = new CityKit(this.W, { geo: raw, a: this.A, glows, wires: this.wiresFor(t), posts: null, foot: null }, (q) => R(q + 500));
   const u0 = t.u - 80, u1 = t.u + 80, v0 = t.v - 80, v1 = t.v + 80;
   for (const a of lay.avenues) {
     for (const side of [1, -1]) {

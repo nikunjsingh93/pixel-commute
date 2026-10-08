@@ -1,5 +1,5 @@
 // The living city: street traffic on a lane graph with signals (and a
-// Shibuya scramble phase), pedestrians on every block's pavements and at the
+// scramble-crossing phase), pedestrians on every block's pavements and at the
 // crossing, the metro trains and the cable car. Installed onto CityNet.
 import * as THREE from 'three';
 import { hash } from './path.js';

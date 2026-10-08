@@ -95,26 +95,26 @@ export class CityLayout {
     // ---------------------------------------------------------- streets
     // avenues run along u; nl = lanes each way
     this.avenues = [
-      { id: 'L2', v: -150, nl: 2, u0: 150, u1: L - 150, name: 'KASUGA DORI' },
-      { id: 'L1', v: -36, nl: 2, u0: 150, u1: L - 150, name: 'SHUTO SHITA' },
-      { id: 'R1', v: 38, nl: 2, u0: 150, u1: L - 150, name: 'GINZA DORI' },
-      { id: 'R2', v: 150, nl: 3, u0: 150, u1: L - 150, name: 'MEIJI DORI' },
-      { id: 'R3', v: 270, nl: 2, u0: 150, u1: L - 150, name: 'SAKURA DORI' },
-      { id: 'R4', v: 385, nl: 1, u0: 150, u1: L - 150, name: 'YAMATE DORI' },
+      { id: 'L2', v: -150, nl: 2, u0: 150, u1: L - 150, name: 'CEDAR AVE' },
+      { id: 'L1', v: -36, nl: 2, u0: 150, u1: L - 150, name: 'VIADUCT ROW' },
+      { id: 'R1', v: 38, nl: 2, u0: 150, u1: L - 150, name: 'GALLERY ST' },
+      { id: 'R2', v: 150, nl: 3, u0: 150, u1: L - 150, name: 'GRAND AVE' },
+      { id: 'R3', v: 270, nl: 2, u0: 150, u1: L - 150, name: 'BLOSSOM ST' },
+      { id: 'R4', v: 385, nl: 1, u0: 150, u1: L - 150, name: 'HILLSIDE RD' },
     ];
     // cross streets run along v; the ones in the full-height part of the
     // viaduct pass under it, the end ones stop at the frontage avenues
     const xs = [330, 520, 720, 900, 1080, 1280, 1480, 1670].map((u) => u * (L / 2000));
     this.cross = xs.map((u, i) => ({
       id: 'C' + i, u, nl: Math.abs(u - 900 * (L / 2000)) < 1 ? 3 : 2, v0: -150, v1: 385,
-      name: ['KANDA', 'AKIBA', 'UENO', 'HACHIKO', 'OMOTE', 'ROPPONGI', 'ASAKUSA', 'NAKANO'][i] + ' DORI',
+      name: ['ASH', 'ELM', 'OAK', 'PLAZA', 'MAPLE', 'BIRCH', 'WILLOW', 'PINE'][i] + ' ST',
     }));
-    this.cross.push({ id: 'CW', u: 150, nl: 1, v0: -150, v1: -36, name: 'NISHI' }, { id: 'CWr', u: 150, nl: 1, v0: 38, v1: 385, name: 'NISHI' });
-    this.cross.push({ id: 'CE', u: L - 150, nl: 1, v0: -150, v1: -36, name: 'HIGASHI' }, { id: 'CEr', u: L - 150, nl: 1, v0: 38, v1: 385, name: 'HIGASHI' });
+    this.cross.push({ id: 'CW', u: 150, nl: 1, v0: -150, v1: -36, name: 'WEST END' }, { id: 'CWr', u: 150, nl: 1, v0: 38, v1: 385, name: 'WEST END' });
+    this.cross.push({ id: 'CE', u: L - 150, nl: 1, v0: -150, v1: -36, name: 'EAST END' }, { id: 'CEr', u: L - 150, nl: 1, v0: 38, v1: 385, name: 'EAST END' });
     for (const a of this.avenues) a.hw = a.nl * LANE + 0.3;
     for (const c of this.cross) c.hw = c.nl * LANE + 0.3;
     this.mainCross = this.cross[3];
-    this.scramble = { u: this.mainCross.u, v: 150 }; // Shibuya-style crossing (R2 x C3)
+    this.scramble = { u: this.mainCross.u, v: 150 }; // the big scramble crossing (R2 x C3)
     this.PAVE = 5;
 
     // intersections
@@ -127,7 +127,7 @@ export class CityLayout {
     }
 
     // ---------------------------------------------------------- ramps
-    // Tokyo-style: the off-ramp leaves the viaduct on the right, drops beside
+    // CityKit-style: the off-ramp leaves the viaduct on the right, drops beside
     // it and ends at a signal on a cross street under the viaduct; the
     // on-ramp starts at another one and climbs back up
     const cOff = this.cross[2], cOn = this.cross[5];
@@ -160,10 +160,10 @@ export class CityLayout {
       return { name, u: n.pu, v: n.pv, t: this.metroCum[n.k] + n.t * (this.metroCum[n.k + 1] - this.metroCum[n.k]) };
     };
     this.stations = [
-      st('AKIHABARA', 640 * (L / 2000), 95),
-      st('SHIBUYA', (this.scramble.u + 80), 210),
-      st('SKYTREE', 1380 * (L / 2000), 210),
-      st('UENO', 1180 * (L / 2000), 95),
+      st('CIRCUIT', 640 * (L / 2000), 95),
+      st('CROSSING', (this.scramble.u + 80), 210),
+      st('SKY TOWER', 1380 * (L / 2000), 210),
+      st('PARKSIDE', 1180 * (L / 2000), 95),
     ];
     // each station opens onto the nearest avenue: the station house sits beside
     // the track, a plaza runs from its door to the avenue pavement, and a tall

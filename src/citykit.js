@@ -1,5 +1,5 @@
-// Tokyo-style street detail, after pixel-art city scenes: narrow mixed-use
-// shop-houses packed side by side, vertical kanji-style signs, awnings, red
+// Dense city street detail, after pixel-art city scenes: narrow mixed-use
+// shop-houses packed side by side, vertical glyph signs, awnings, red
 // lanterns, vending machines, AC units, balconies, rooftop water tanks and
 // frames, concrete utility poles with sagging wires, low tiled-roof houses
 // behind block walls, and rows of apartments filling the land behind.
@@ -356,7 +356,7 @@ function shopTextures() {
   return { map: tex(c), emissive: tex(ce) };
 }
 
-export function tokyoMaterials() {
+export function kitMaterials() {
   const atlas = atlasTexture();
   const fac = facadeTextures();
   const shop = shopTextures();
@@ -369,7 +369,7 @@ export function tokyoMaterials() {
   };
 }
 
-export function tokyoNight(m, k) {
+export function kitNight(m, k) {
   m.sign.emissiveIntensity = 0.45 + 1.5 * k;
   m.facade.emissiveIntensity = 0.12 + 1.5 * k;
   m.shop.emissiveIntensity = 0.45 + 1.9 * k;
@@ -378,7 +378,7 @@ export function tokyoNight(m, k) {
 // ---------------------------------------------------------------- builders
 // The builder works in one chunk: W = world, c = chunk context (geo, a, glows,
 // lines, wires). R(k) is the chunk's deterministic random.
-export class Tokyo {
+export class CityKit {
   constructor(W, c, R) {
     this.W = W;
     this.c = c;
@@ -656,7 +656,7 @@ export class Tokyo {
     }
   }
 
-  // ---- a low Japanese house behind a block wall, tiled roof
+  // ---- a low house behind a block wall, tiled roof
   house(sm, along, front, side, base) {
     const W = this.W, geo = this.c.geo, a = this.c.a;
     const f = this.frame(sm);
